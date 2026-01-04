@@ -13,9 +13,15 @@ def _deploy_subprocess(
 ) -> str | None:
     error_message = error_message or "An error occurred while executing the command."
 
+    # Merge custom environment variables with current environment
+    # This preserves key variables such as PATH
+    env = os.environ.copy()
+    if environment_variables is not None:
+        env.update(environment_variables)
+
     result = subprocess.run(
         args=command,
-        env=environment_variables,
+        env=env,
         shell=True,
         capture_output=True,
         text=True,
