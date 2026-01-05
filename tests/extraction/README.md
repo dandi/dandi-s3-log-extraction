@@ -10,10 +10,6 @@ The names of the following test files are patterned off of the S3 log filename c
 
 # 2020-01-01-05-06-35-0123456789ABCDEF (Easy lines)
 
-For DANDI, the timestamps of each line for a log file correspond to the `YEAR/MONTH/DAY.log` of the directory.
-
-The extraction tools are not dependent on this structure and so to simplify the test cases, we only maintain two files.
-
 The 'easy' collection contains the most typical lines which follow a nice, simple, and reliable structure.
 
 

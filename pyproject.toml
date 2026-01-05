@@ -41,6 +41,7 @@ dependencies = [
     "psutil",
     "cryptography",
     "dandi",
+    "s3_log_extraction",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

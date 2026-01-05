@@ -1,12 +1,12 @@
 import pathlib
 import sys
 
-from ._remote_s3_log_access_extractor import RemoteS3LogAccessExtractor
+import s3_log_extraction
+
 from .._regex import DROGON_IP_REGEX_ENCRYPTED
-from ..encryption_utils import decrypt_bytes
 
 
-class DandiRemoteS3LogAccessExtractor(RemoteS3LogAccessExtractor):
+class DandiRemoteS3LogAccessExtractor(s3_log_extraction.extractors.RemoteS3LogAccessExtractor):
     """
     A DANDI-specific extractor of basic access information contained in remotely stored raw S3 logs.
 
@@ -31,5 +31,5 @@ class DandiRemoteS3LogAccessExtractor(RemoteS3LogAccessExtractor):
         awk_filename = "_dandi_extraction.awk" if sys.platform != "win32" else "_dandi_extraction_windows.awk"
         self._relative_script_path = pathlib.Path(__file__).parent / awk_filename
 
-        ips_to_skip_regex = decrypt_bytes(encrypted_data=DROGON_IP_REGEX_ENCRYPTED)
+        ips_to_skip_regex = s3_log_extraction.encryption_utils.decrypt_bytes(encrypted_data=DROGON_IP_REGEX_ENCRYPTED)
         self._awk_env["IPS_TO_SKIP_REGEX"] = ips_to_skip_regex.decode("utf-8")

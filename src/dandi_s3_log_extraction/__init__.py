@@ -17,21 +17,9 @@ The reduced information is then additionally mapped to currently available asset
 versions and current drafts, which only comprise around 100 MB of the original data.
 """
 
-from .config import reset_extraction
-
 __all__ = [
-    # Public methods
-    "reset_extraction",
     # Public submodules
-    "config",
     "database",
-    "encryption_utils",
     "extractors",
-    "ip_utils",
     "summarize",
-    "testing",
-    "validate",
 ]
-
-# Trigger import of hidden submodule elements (only need to import one item to trigger the rest)
-from ._hidden_top_level_imports import _hide
