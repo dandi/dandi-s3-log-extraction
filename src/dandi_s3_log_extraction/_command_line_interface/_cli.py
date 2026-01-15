@@ -6,28 +6,17 @@ import typing
 import pydantic
 import rich_click
 
-from ..config import reset_extraction, set_cache_directory
+from s3_log_extraction.config import reset_extraction, set_cache_directory
+from dandi_s3_log_extraction.extractors import S3LogAccessExtractor, RemoteS3LogAccessExtractor, stop_extraction
+
 from ..database import bundle_database
-from ..extractors import (
-    DandiRemoteS3LogAccessExtractor,
-    DandiS3LogAccessExtractor,
-    RemoteS3LogAccessExtractor,
-    S3LogAccessExtractor,
-    stop_extraction,
-)
+from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
 from ..ip_utils import index_ips, update_index_to_region_codes, update_region_code_coordinates
 from ..summarize import (
     generate_archive_summaries,
     generate_archive_totals,
     generate_dandiset_summaries,
     generate_dandiset_totals,
-)
-from ..testing import generate_benchmark
-from ..validate import (
-    ExtractionHeuristicPreValidator,
-    HttpEmptySplitPreValidator,
-    HttpSplitCountPreValidator,
-    TimestampsParsingPreValidator,
 )
 
 
@@ -37,7 +26,7 @@ def _dandis3logextraction_cli():
     pass
 
 
-# s3logextraction extract < directory >
+# dandis3logextraction extract < directory >
 @_dandis3logextraction_cli.command(name="extract")
 @rich_click.argument("directory", type=rich_click.Path(writable=False))
 @rich_click.option(
@@ -227,7 +216,7 @@ def _update_ip_coordinates_cli() -> None:
     update_region_code_coordinates()
 
 
-# s3logextraction update summaries
+# dandis3logextraction update summaries
 @_update_cli.command(name="summaries")
 @rich_click.option(
     "--mode",
@@ -295,14 +284,14 @@ def _update_summaries_cli(
             rich_click.echo(message=message, err=True)
 
 
-# s3logextraction update database
+# dandis3logextraction update database
 @_update_cli.command(name="database")
 def _bundle_database_cli() -> None:
     """Update (or create) a bundled database for easier sharing."""
     bundle_database()
 
 
-# s3logextraction update totals
+# dandis3logextraction update totals
 @_update_cli.command(name="totals")
 @rich_click.option(
     "--mode",
@@ -324,56 +313,3 @@ def _update_totals_cli(mode: typing.Literal["dandi", "archive"] | None = None) -
         case _:
             message = "The generic mode is not yet implemented - please raise an issue to discuss."
             rich_click.echo(message=message, err=True)
-
-
-# s3logextraction testing
-@_dandis3logextraction_cli.group(name="testing")
-def _testing_cli() -> None:
-    """Testing utilities for the S3 log extraction."""
-    pass
-
-
-# s3logextraction testing generate benchmark
-@_testing_cli.group(name="generate")
-def _testing_generate_cli() -> None:
-    """Generate various types of mock data for testing purposes."""
-    pass
-
-
-# s3logextraction testing generate benchmark
-@_testing_generate_cli.command(name="benchmark")
-@rich_click.argument("directory", type=rich_click.Path(writable=True))
-def _generate_benchmark_cli(directory: str) -> None:
-    """
-    Generate a ~120 MB benchmark of the S3 log extraction to use for performance testing.
-
-    DIRECTORY : The path to the folder where the benchmark will be stored.
-    """
-    generate_benchmark(directory=directory)
-
-
-# s3logextraction validate < protocol > < directory >
-@_dandis3logextraction_cli.command(name="validate")
-@rich_click.argument(
-    "protocol",
-    type=rich_click.Choice(["http_empty_split", "http_split_count", "extraction_heuristic", "timestamps_parsing"]),
-)
-@rich_click.argument("directory", type=rich_click.Path(writable=False))
-def _validate_cli(
-    protocol: typing.Literal["http_empty_split", "http_split_count", "extraction_heuristic", "timestamps_parsing"],
-    directory: pydantic.DirectoryPath,
-) -> None:
-    """Run a pre-validation protocol."""
-    match protocol:
-        case "http_empty_split":
-            validator = HttpEmptySplitPreValidator()
-            validator.validate_directory(directory=directory)
-        case "http_split_count":
-            validator = HttpSplitCountPreValidator()
-            validator.validate_directory(directory=directory)
-        case "extraction_heuristic":
-            validator = ExtractionHeuristicPreValidator()
-            validator.validate_directory(directory=directory)
-        case "timestamps_parsing":
-            validator = TimestampsParsingPreValidator()
-            validator.validate_directory(directory=directory)

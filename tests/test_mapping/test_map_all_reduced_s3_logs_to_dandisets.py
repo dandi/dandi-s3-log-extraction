@@ -5,7 +5,7 @@ import pandas
 import py
 import pytest
 
-import s3_log_extraction
+import dandi_s3_log_extraction
 
 
 @pytest.mark.dandi
@@ -21,7 +21,7 @@ def test_map_all_reduced_s3_logs_to_dandisets(tmpdir: py.path.local):
 
     expected_output_folder_path = examples_folder_path / "expected_dandi_output"
 
-    s3_log_extraction.map_binned_s3_logs_to_dandisets(
+    dandi_s3_log_extraction.map_binned_s3_logs_to_dandisets(
         binned_s3_logs_folder_path=example_binned_s3_logs_folder_path,
         mapped_s3_logs_folder_path=test_mapped_s3_logs_folder_path,
     )
