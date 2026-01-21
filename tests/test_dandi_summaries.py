@@ -3,14 +3,11 @@ import shutil
 
 import pandas
 import py
-import pytest
 import s3_log_extraction
 
 import dandi_s3_log_extraction
 
 
-@pytest.mark.dandi
-@pytest.mark.remote
 def test_dandiset_summaries(tmpdir: py.path.local):
     test_dir = pathlib.Path(tmpdir)
 

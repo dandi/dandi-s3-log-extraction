@@ -1,13 +1,11 @@
 import pathlib
 
 import py
-import pytest
-
-import dandi_s3_log_extraction
 import s3_log_extraction
 
+import dandi_s3_log_extraction
 
-@pytest.mark.dandi
+
 def test_extraction(tmpdir: py.path.local) -> None:
     tmpdir = pathlib.Path(tmpdir)
 
@@ -36,7 +34,6 @@ def test_extraction(tmpdir: py.path.local) -> None:
     )
 
 
-@pytest.mark.dandi
 def test_extraction_parallel(tmpdir: py.path.local) -> None:
     tmpdir = pathlib.Path(tmpdir)
 
