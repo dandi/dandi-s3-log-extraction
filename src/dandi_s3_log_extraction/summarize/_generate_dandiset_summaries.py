@@ -16,12 +16,11 @@ from .._parallel._utils import _handle_max_workers
 @pydantic.validate_call
 def generate_dandiset_summaries(
     *,
-    summary_directory: str | pathlib.Path | None = None,
+    cache_directory: str | pathlib.Path | None = None,
     pick: list[str] | None = None,
     skip: list[str] | None = None,
     workers: int = -2,
     api_url: str | None = None,
-    extraction_directory: str | pathlib.Path | None = None,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
@@ -43,22 +42,19 @@ def generate_dandiset_summaries(
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
-    extraction_directory : pathlib.Path, optional
+    cache_directory : pathlib.Path, optional
         Path to the folder containing all previously extracted S3 access logs.
         If `None`, the default extraction directory from the configuration will be used.
     """
     import dandi.dandiapi
 
-    summary_directory = (
-        pathlib.Path(summary_directory)
-        if summary_directory is not None
-        else s3_log_extraction.config.get_summary_directory()
+    cache_directory = (
+        pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
     )
-    extraction_directory = (
-        pathlib.Path(extraction_directory)
-        if extraction_directory is not None
-        else s3_log_extraction.config.get_extraction_directory()
-    )
+
+    summary_directory = cache_directory / "summaries"
+    summary_directory.mkdir(exist_ok=True)
+
     if pick is not None and skip is not None:
         message = "Cannot specify both `pick` and `skip` parameters simultaneously."
         raise ValueError(message)
@@ -68,7 +64,7 @@ def generate_dandiset_summaries(
 
     # TODO: record and only update basic DANDI stuff based on mtime or etag
     dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(
-        api_url=api_url, extraction_directory=extraction_directory
+        api_url=api_url, cache_directory=cache_directory
     )
 
     # TODO: cache even the dandiset listing and leverage etags
@@ -156,10 +152,11 @@ def generate_dandiset_summaries(
     )
 
 
+# TODO: add ember batch
 def _get_dandi_asset_info(
-    *, use_cache: bool = True, api_url: str | None = None, extraction_directory: pathlib.Path
+    *, use_cache: bool = True, api_url: str | None = None, cache_directory: pathlib.Path
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
-    cache_directory = s3_log_extraction.config.get_cache_directory()
+    extraction_directory = cache_directory / "extraction"
     dandi_cache_directory = cache_directory / "dandi"
     dandi_cache_directory.mkdir(exist_ok=True)
 
@@ -213,8 +210,8 @@ def _get_dandi_asset_info(
                     )
                     blob_directory_to_associated_dandiset_ids[blob_directory].add(dandiset_id)
 
-        blob_id_to_asset_path = dict()
         dandiset_id_to_blob_directories = collections.defaultdict(list)
+        blob_id_to_asset_path = dict()
         for blob_directory, dandiset_ids in blob_directory_to_associated_dandiset_ids.items():
             blob_id = blob_directory.name
 

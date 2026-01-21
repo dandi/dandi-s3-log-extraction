@@ -6,6 +6,7 @@ import pydantic
 import s3_log_extraction
 
 
+# TODO: can likely be replaced by the generic version
 @pydantic.validate_call
 def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None) -> None:
     """
@@ -26,7 +27,7 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
     # TODO: can likely be replaced entirely by the generic one
 
     all_dandiset_totals = dict()
-    for dandiset_id_folder_path in summary_directory.parent.iterdir():
+    for dandiset_id_folder_path in summary_directory.iterdir():
         if not dandiset_id_folder_path.is_dir():
             continue
 
@@ -57,6 +58,9 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
             "number_of_unique_regions": number_of_unique_regions,
             "number_of_unique_countries": number_of_unique_countries,
         }
+
+    if not all_dandiset_totals:
+        return
 
     top_level_summary_file_path = summary_directory / "totals.json"
     with top_level_summary_file_path.open(mode="w") as io:
