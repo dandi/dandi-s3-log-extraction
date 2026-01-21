@@ -4,7 +4,6 @@ import os
 import typing
 
 import rich_click
-
 import s3_log_extraction
 
 from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
