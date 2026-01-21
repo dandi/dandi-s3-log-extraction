@@ -33,7 +33,7 @@ jobs:
           body: "The daily test workflow failed, please check status at https://github.com/dandi/s3-log-extraction/actions/workflows/dailies.yml"
 
 #  LiveServices:
-#    uses: ./.github/workflows/testing_live_services.yml
+#    uses: ./.github/workflows/remote_testing.yml
 #    secrets:
 #      IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
 #      IPINFO_API_KEY: ${{ secrets.IPINFO_API_KEY }}
