@@ -2,9 +2,9 @@ import pathlib
 
 import py
 import pytest
-import s3_log_extraction
 
 import dandi_s3_log_extraction
+import s3_log_extraction
 
 
 @pytest.mark.dandi

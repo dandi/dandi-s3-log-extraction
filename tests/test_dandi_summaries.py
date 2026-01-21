@@ -1,12 +1,12 @@
-import json
 import pathlib
 import shutil
+
 import pandas
 import py
 import pytest
-import s3_log_extraction
 
 import dandi_s3_log_extraction
+import s3_log_extraction
 
 
 @pytest.mark.dandi
@@ -23,7 +23,9 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     test_summary_dir = test_dir / "summaries"
     shutil.copytree(src=expected_extraction_dir, dst=test_extraction_dir)
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_summaries(summary_directory=test_summary_dir, workers=1, extraction_directory=test_extraction_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
+        summary_directory=test_summary_dir, workers=1, extraction_directory=test_extraction_dir
+    )
 
     # Cannot generate `by_region.tsv` here since it would need to expose a real IP
     # TODO: disconnect IP cache and allow it to be specific in tests with false values
@@ -33,13 +35,9 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
     s3_log_extraction.generate_archive_summaries(summary_directory=test_summary_dir)
 
-    test_file_paths = {
-        path.relative_to(test_summary_dir): path
-        for path in test_summary_dir.rglob(pattern="*.tsv")
-    }
+    test_file_paths = {path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="*.tsv")}
     expected_file_paths = {
-        path.relative_to(expected_summaries_dir): path
-        for path in expected_summaries_dir.rglob(pattern="*.tsv")
+        path.relative_to(expected_summaries_dir): path for path in expected_summaries_dir.rglob(pattern="*.tsv")
     }
     assert set(test_file_paths.keys()) == set(expected_file_paths.keys())
 

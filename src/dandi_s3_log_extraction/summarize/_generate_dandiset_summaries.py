@@ -2,7 +2,6 @@ import collections
 import concurrent.futures
 import datetime
 import pathlib
-import warnings
 
 import pandas
 import pydantic
@@ -13,6 +12,7 @@ import yaml
 import s3_log_extraction
 
 from .._parallel._utils import _handle_max_workers
+
 
 @pydantic.validate_call
 def generate_dandiset_summaries(
@@ -50,8 +50,16 @@ def generate_dandiset_summaries(
     """
     import dandi.dandiapi
 
-    summary_directory = pathlib.Path(summary_directory) if summary_directory is not None else s3_log_extraction.config.get_summary_directory()
-    extraction_directory = pathlib.Path(extraction_directory) if extraction_directory is not None else s3_log_extraction.config.get_extraction_directory()
+    summary_directory = (
+        pathlib.Path(summary_directory)
+        if summary_directory is not None
+        else s3_log_extraction.config.get_summary_directory()
+    )
+    extraction_directory = (
+        pathlib.Path(extraction_directory)
+        if extraction_directory is not None
+        else s3_log_extraction.config.get_extraction_directory()
+    )
     if pick is not None and skip is not None:
         message = "Cannot specify both `pick` and `skip` parameters simultaneously."
         raise ValueError(message)
@@ -60,7 +68,9 @@ def generate_dandiset_summaries(
     index_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="index_to_region")
 
     # TODO: record and only update basic DANDI stuff based on mtime or etag
-    dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(api_url=api_url, extraction_directory=extraction_directory)
+    dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(
+        api_url=api_url, extraction_directory=extraction_directory
+    )
 
     # TODO: cache even the dandiset listing and leverage etags
     client = dandi.dandiapi.DandiAPIClient(api_url=api_url)

@@ -3,14 +3,11 @@
 import os
 import typing
 
-import pydantic
 import rich_click
 
 import s3_log_extraction
 
-from ..database import bundle_database
 from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
-from ..ip_utils import index_ips, update_index_to_region_codes, update_region_code_coordinates
 from ..summarize import generate_dandiset_summaries, generate_dandiset_totals
 
 
@@ -91,6 +88,7 @@ def _extract_cli(
         case _:
             extractor = DandiS3LogAccessExtractor()
             extractor.extract_directory(directory=directory, limit=limit, workers=workers)
+
 
 # dandis3logextraction stop
 @_dandis3logextraction_cli.command(name="stop")
