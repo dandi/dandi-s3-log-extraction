@@ -8,6 +8,9 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dandi_s3_log_extraction"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 
 
 [project]
