@@ -6,10 +6,9 @@ import pathlib
 import pandas
 import pydantic
 import requests
+import s3_log_extraction
 import tqdm
 import yaml
-
-import s3_log_extraction
 
 from .._parallel._utils import _handle_max_workers
 

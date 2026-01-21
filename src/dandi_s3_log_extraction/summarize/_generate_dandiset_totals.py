@@ -3,7 +3,6 @@ import pathlib
 
 import pandas
 import pydantic
-
 import s3_log_extraction
 
 
