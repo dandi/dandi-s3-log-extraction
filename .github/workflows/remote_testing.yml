@@ -2,16 +2,8 @@ name: Remote tests
 on:
   workflow_call:
     secrets:
-      IPINFO_API_KEY:
-        required: true
-      OPENCAGE_KEY:
-        required: true
       CODECOV_CREDENTIALS:
         required: true
-
-env:
-  IPINFO_API_KEY: ${{ secrets.IPINFO_API_KEY }}
-  OPENCAGE_KEY: ${{ secrets.OPENCAGE_KEY }}
 
 jobs:
 

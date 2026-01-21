@@ -14,9 +14,7 @@ jobs:
     secrets:
       CODECOV_CREDENTIALS: ${{ secrets.CODECOV_CREDENTIALS }}
 
-#  LiveServices:
-#    uses: ./.github/workflows/remote_testing.yml
-#    secrets:
-#      IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
-#      IPINFO_CREDENTIALS: ${{ secrets.IPINFO_CREDENTIALS }}
-#      CODECOV_CREDENTIALS: ${{ secrets.CODECOV_CREDENTIALS }}
+  RemoteTests:
+    uses: ./.github/workflows/remote_testing.yml
+    secrets:
+      CODECOV_CREDENTIALS: ${{ secrets.CODECOV_CREDENTIALS }}
