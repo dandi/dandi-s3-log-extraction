@@ -2,16 +2,17 @@ import collections
 import concurrent.futures
 import datetime
 import pathlib
+import warnings
 
 import pandas
 import pydantic
+import requests
 import tqdm
 import yaml
 
-from .._parallel._utils import _handle_max_workers
-from ..config import get_cache_directory, get_extraction_directory, get_summary_directory
-from ..ip_utils import load_ip_cache
+import s3_log_extraction
 
+from .._parallel._utils import _handle_max_workers
 
 @pydantic.validate_call
 def generate_dandiset_summaries(
@@ -21,6 +22,7 @@ def generate_dandiset_summaries(
     skip: list[str] | None = None,
     workers: int = -2,
     api_url: str | None = None,
+    extraction_directory: str | pathlib.Path | None = None,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
@@ -29,6 +31,7 @@ def generate_dandiset_summaries(
     ----------
     summary_directory : pathlib.Path
         Path to the folder that will contain all Dandiset summaries of the S3 access logs.
+        If `None`, the default summary directory from the configuration will be used.
     workers : int
         Number of workers to use for parallel processing.
         If -1, use all available cores. If -2, use all cores minus one.
@@ -41,19 +44,23 @@ def generate_dandiset_summaries(
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
+    extraction_directory : pathlib.Path, optional
+        Path to the folder containing all previously extracted S3 access logs.
+        If `None`, the default extraction directory from the configuration will be used.
     """
     import dandi.dandiapi
 
-    summary_directory = pathlib.Path(summary_directory) if summary_directory is not None else get_summary_directory()
+    summary_directory = pathlib.Path(summary_directory) if summary_directory is not None else s3_log_extraction.config.get_summary_directory()
+    extraction_directory = pathlib.Path(extraction_directory) if extraction_directory is not None else s3_log_extraction.config.get_extraction_directory()
     if pick is not None and skip is not None:
         message = "Cannot specify both `pick` and `skip` parameters simultaneously."
         raise ValueError(message)
     max_workers = _handle_max_workers(workers=workers)
 
-    index_to_region = load_ip_cache(cache_type="index_to_region")
+    index_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="index_to_region")
 
     # TODO: record and only update basic DANDI stuff based on mtime or etag
-    dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(api_url=api_url)
+    dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(api_url=api_url, extraction_directory=extraction_directory)
 
     # TODO: cache even the dandiset listing and leverage etags
     client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
@@ -141,14 +148,11 @@ def generate_dandiset_summaries(
 
 
 def _get_dandi_asset_info(
-    *, use_cache: bool = True, api_url: str | None = None
+    *, use_cache: bool = True, api_url: str | None = None, extraction_directory: pathlib.Path
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
-    import dandi.dandiapi
-
-    cache_directory = get_cache_directory()
+    cache_directory = s3_log_extraction.config.get_cache_directory()
     dandi_cache_directory = cache_directory / "dandi"
     dandi_cache_directory.mkdir(exist_ok=True)
-    extraction_directory = get_extraction_directory()
 
     date = datetime.datetime.now().date().strftime("%Y_%m")
     monthly_dandiset_id_to_blob_directories_cache_file_path = (
@@ -167,31 +171,35 @@ def _get_dandi_asset_info(
         with monthly_blob_id_to_asset_path_cache_file_path.open(mode="r") as file_stream:
             blob_id_to_asset_path = yaml.safe_load(stream=file_stream)
     else:
-        client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
-        dandisets = list(client.get_dandisets())
+        blob_id_to_paths_per_dandiset_url = (
+            "https://raw.githubusercontent.com/dandi-compute/blobs-to-paths/main/blob_id_to_path.min.json"
+        )
+        response = requests.get(url=blob_id_to_paths_per_dandiset_url)
+        if response.status_code != 200:
+            message = (
+                f"Failed to retrieve blob ID to paths mapping from {blob_id_to_paths_per_dandiset_url} - "
+                f"status code {response.status_code}: {response.json()}"
+            )
+            raise RuntimeError(message)
+
+        blob_id_to_paths_per_dandiset = response.json()
 
         blob_id_to_associated_asset_paths: dict[str, set[str]] = collections.defaultdict(set)
         blob_directory_to_associated_dandiset_ids: dict[str, set[str]] = collections.defaultdict(set)
-        for base_dandiset in tqdm.tqdm(
-            iterable=dandisets,
-            total=len(dandisets),
-            desc="Mapping blob IDs to Dandisets",
-            unit="dandisets",
+        for blob_id, paths_per_dandiset in tqdm.tqdm(
+            iterable=blob_id_to_paths_per_dandiset.items(),
+            total=len(blob_id_to_paths_per_dandiset),
+            desc="Mapping blob IDs to Dandiset paths",
+            unit="blobs",
             smoothing=0,
         ):
-            dandiset_id = base_dandiset.identifier
-
-            for version in base_dandiset.get_versions():
-                versioned_dandiset = client.get_dandiset(
-                    dandiset_id=base_dandiset.identifier, version_id=version.identifier
-                )
-                for asset in versioned_dandiset.get_assets():
-                    blob_id = asset.zarr if ".zarr" in pathlib.Path(asset.path).suffixes else asset.blob
-                    blob_id_to_associated_asset_paths[blob_id].add(asset.path)
+            for dandiset_id, asset_paths in paths_per_dandiset.items():
+                for asset_path in asset_paths:
+                    blob_id_to_associated_asset_paths[blob_id].add(asset_path)
 
                     blob_directory = (
                         extraction_directory / "zarr" / blob_id
-                        if ".zarr" in pathlib.Path(asset.path).suffixes
+                        if ".zarr" in asset_path
                         else extraction_directory / "blobs" / blob_id[:3] / blob_id[3:6] / blob_id
                     )
                     blob_directory_to_associated_dandiset_ids[blob_directory].add(dandiset_id)

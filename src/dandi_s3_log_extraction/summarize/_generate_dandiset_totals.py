@@ -4,7 +4,7 @@ import pathlib
 import pandas
 import pydantic
 
-from ..config import get_summary_directory
+import s3_log_extraction
 
 
 @pydantic.validate_call
@@ -16,13 +16,14 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
     ----------
     summary_directory : pathlib.Path
         Path to the folder containing all previously generated summaries of the S3 access logs.
+        If `None`, the default summary directory from the configuration will be used.
     """
-    summary_directory = pathlib.Path(summary_directory) if summary_directory is not None else get_summary_directory()
+    summary_directory = pathlib.Path(summary_directory) if summary_directory is not None else s3_log_extraction.config.get_summary_directory()
 
-    # TODO: record progress over
+    # TODO: can likely be replaced entirely by the generic one
 
     all_dandiset_totals = dict()
-    for dandiset_id_folder_path in summary_directory.iterdir():
+    for dandiset_id_folder_path in summary_directory.parent.iterdir():
         if not dandiset_id_folder_path.is_dir():
             continue
 

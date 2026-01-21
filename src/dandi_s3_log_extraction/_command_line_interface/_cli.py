@@ -6,21 +6,15 @@ import typing
 import pydantic
 import rich_click
 
-from s3_log_extraction.config import reset_extraction, set_cache_directory
-from dandi_s3_log_extraction.extractors import S3LogAccessExtractor, RemoteS3LogAccessExtractor, stop_extraction
+import s3_log_extraction
 
 from ..database import bundle_database
 from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
 from ..ip_utils import index_ips, update_index_to_region_codes, update_region_code_coordinates
-from ..summarize import (
-    generate_archive_summaries,
-    generate_archive_totals,
-    generate_dandiset_summaries,
-    generate_dandiset_totals,
-)
+from ..summarize import generate_dandiset_summaries, generate_dandiset_totals
 
 
-# s3logextraction
+# dandis3logextraction
 @rich_click.group()
 def _dandis3logextraction_cli():
     pass
@@ -74,7 +68,7 @@ def _extract_cli(
     directory: str,
     limit: int | None = None,
     workers: int = -2,
-    mode: typing.Literal["remote", "dandi", "dandi-remote"] | None = None,
+    mode: typing.Literal["remote"] | None = None,
     manifest_file_path: str | None = None,
 ) -> None:
     """
@@ -87,17 +81,6 @@ def _extract_cli(
     """
     match mode:
         case "remote":
-            extractor = RemoteS3LogAccessExtractor()
-            extractor.extract_s3_bucket(
-                s3_root=directory,
-                limit=limit,
-                workers=workers,
-                manifest_file_path=manifest_file_path,
-            )
-        case "dandi":
-            extractor = DandiS3LogAccessExtractor()
-            extractor.extract_directory(directory=directory, limit=limit, workers=workers)
-        case "dandi-remote":
             extractor = DandiRemoteS3LogAccessExtractor()
             extractor.extract_s3_bucket(
                 s3_root=directory,
@@ -106,11 +89,10 @@ def _extract_cli(
                 manifest_file_path=manifest_file_path,
             )
         case _:
-            extractor = S3LogAccessExtractor()
+            extractor = DandiS3LogAccessExtractor()
             extractor.extract_directory(directory=directory, limit=limit, workers=workers)
 
-
-# s3logextraction stop
+# dandis3logextraction stop
 @_dandis3logextraction_cli.command(name="stop")
 @rich_click.option(
     "--timeout",
@@ -131,89 +113,13 @@ def _stop_extraction_cli(max_timeout_in_seconds: int = 600) -> None:
     Note that you should not attempt to interrupt the extraction process using Ctrl+C or pkill, as this may lead to
     incomplete data extraction. Instead, use this command to safely stop the extraction process.
     """
-    stop_extraction(max_timeout_in_seconds=max_timeout_in_seconds)
+    s3_log_extraction.extractors.stop_extraction(max_timeout_in_seconds=max_timeout_in_seconds)
 
 
-# s3logextraction config
-@_dandis3logextraction_cli.group(name="config")
-def _config_cli() -> None:
-    """Configuration options, such as cache management."""
-    pass
-
-
-# s3logextraction config cache
-@_config_cli.group(name="cache")
-def _cache_cli() -> None:
-    pass
-
-
-# s3logextraction config cache set < directory >
-@_cache_cli.command(name="set")
-@rich_click.argument("directory", type=rich_click.Path(writable=True))
-def _set_cache_cli(directory: str) -> None:
-    """
-    Set a non-default location for the cache directory.
-
-    DIRECTORY : The path to the folder where the cache will be stored.
-        The extraction cache typically uses 0.3% of the total size of the S3 logs being processed for simple files.
-            For example, 20 GB of extracted data from 6 TB of logs.
-
-        This amount is known to exceed 1.2% of the total size of the S3 logs being processed for Zarr stores.
-            For example, 80 GB if extracted data from 6 TB of logs.
-    """
-    set_cache_directory(directory=directory)
-
-
-# s3logextraction reset
-@_dandis3logextraction_cli.group(name="reset")
-def _reset_cli() -> None:
-    pass
-
-
-# s3logextraction reset extraction
-@_reset_cli.command(name="extraction")
-def _reset_extraction_cli() -> None:
-    reset_extraction()
-
-
-# s3logextraction update
+# dandis3logextraction update
 @_dandis3logextraction_cli.group(name="update")
 def _update_cli() -> None:
     pass
-
-
-# s3logextraction update ip
-@_update_cli.group(name="ip")
-def _update_ip_cli() -> None:
-    pass
-
-
-# s3logextraction update ip indexes
-@_update_ip_cli.command(name="indexes")
-def _update_ip_indexes_cli() -> None:
-    index_ips()
-
-
-# s3logextraction update ip regions
-@_update_ip_cli.command(name="regions")
-@rich_click.option(
-    "--batch-limit",
-    help=(
-        "The maximum number of batches to process when updating IP region codes. "
-        "By default, all batches will be processed."
-    ),
-    required=False,
-    type=int,
-    default=None,
-)
-def _update_ip_regions_cli(batch_limit: int | None = None) -> None:
-    update_index_to_region_codes(batch_limit=batch_limit)
-
-
-# s3logextraction update ip coordinates
-@_update_ip_cli.command(name="coordinates")
-def _update_ip_coordinates_cli() -> None:
-    update_region_code_coordinates()
 
 
 # dandis3logextraction update summaries
@@ -273,22 +179,12 @@ def _update_summaries_cli(
 ) -> None:
     """Generate condensed summaries of activity."""
     match mode:
-        case "dandi":
+        case "archive":
+            s3_log_extraction.summarize.generate_archive_summaries()
+        case _:
             pick_as_list = pick.split(",") if pick is not None else None
             skip_as_list = skip.split(",") if skip is not None else None
             generate_dandiset_summaries(pick=pick_as_list, skip=skip_as_list, workers=workers, api_url=api_url)
-        case "archive":
-            generate_archive_summaries()
-        case _:
-            message = "The generic mode is not yet implemented - please raise an issue to discuss."
-            rich_click.echo(message=message, err=True)
-
-
-# dandis3logextraction update database
-@_update_cli.command(name="database")
-def _bundle_database_cli() -> None:
-    """Update (or create) a bundled database for easier sharing."""
-    bundle_database()
 
 
 # dandis3logextraction update totals
@@ -306,10 +202,7 @@ def _bundle_database_cli() -> None:
 def _update_totals_cli(mode: typing.Literal["dandi", "archive"] | None = None) -> None:
     """Generate grand totals of all extracted data."""
     match mode:
-        case "dandi":
-            generate_dandiset_totals()
         case "archive":
-            generate_archive_totals()
+            s3_log_extraction.summarize.generate_archive_totals()
         case _:
-            message = "The generic mode is not yet implemented - please raise an issue to discuss."
-            rich_click.echo(message=message, err=True)
+            generate_dandiset_totals()

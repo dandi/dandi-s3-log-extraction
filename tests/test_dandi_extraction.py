@@ -2,6 +2,7 @@ import pathlib
 
 import py
 import pytest
+import s3_log_extraction
 
 import dandi_s3_log_extraction
 
@@ -11,10 +12,10 @@ def test_extraction(tmpdir: py.path.local) -> None:
     tmpdir = pathlib.Path(tmpdir)
 
     base_directory = pathlib.Path(__file__).parent
-    test_logs_directory = base_directory / "test_dandi_logs"
+    test_logs_directory = base_directory / "example_logs"
     output_directory = tmpdir / "test_extraction"
     output_directory.mkdir(exist_ok=True)
-    expected_output_directory = base_directory / "expected_dandi_output"
+    expected_output_directory = base_directory / "expected_output"
 
     extractor = dandi_s3_log_extraction.extractors.DandiS3LogAccessExtractor(cache_directory=output_directory)
     extractor.extract_directory(directory=test_logs_directory, workers=1)
@@ -40,10 +41,10 @@ def test_extraction_parallel(tmpdir: py.path.local) -> None:
     tmpdir = pathlib.Path(tmpdir)
 
     base_directory = pathlib.Path(__file__).parent
-    test_logs_directory = base_directory / "test_dandi_logs"
+    test_logs_directory = base_directory / "example_logs"
     output_directory = tmpdir / "test_extraction"
     output_directory.mkdir(exist_ok=True)
-    expected_output_directory = base_directory / "expected_dandi_output"
+    expected_output_directory = base_directory / "expected_output"
 
     extractor = dandi_s3_log_extraction.extractors.DandiS3LogAccessExtractor(cache_directory=output_directory)
     extractor.extract_directory(directory=test_logs_directory, workers=2)
