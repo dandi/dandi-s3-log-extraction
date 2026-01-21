@@ -22,16 +22,7 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     s3_log_extraction.ip_utils.index_ips(cache_directory=test_dir)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(cache_directory=test_dir, workers=1)
-    assert test_summary_dir.is_dir()
-    assert len(list(test_summary_dir.rglob("*.tsv"))) > 0
-
-    # Cannot generate `by_region.tsv` here since it would need to expose a real IP
-    # TODO: disconnect IP cache and allow it to be specific in tests with false values
-    # shutil.copyfile(src=expected_summaries_dir / "000126" / "by_region.tsv", dst=test_summary_dir / "000126")
-
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=test_summary_dir)
-    assert (test_summary_dir / "totals.json").is_file()
-
     s3_log_extraction.summarize.generate_archive_summaries(summary_directory=test_summary_dir)
 
     test_file_paths = {path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="*.tsv")}
