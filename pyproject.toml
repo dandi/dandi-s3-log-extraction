@@ -50,7 +50,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: Unix",
     "Operating System :: MacOS",
-    "Operating System :: Microsoft :: Windows",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "License :: OSI Approved :: MIT License",
 ]
@@ -68,17 +67,14 @@ remote = [
 sharing = [
     "polars",
 ]
-dandi = [
-    "dandi",
-]
-all = ["dandi_s3_log_extraction[geolocation,remote,sharing,dandi]"]
+all = ["dandi_s3_log_extraction[geolocation,remote,sharing]"]
 
 [project.urls]
 Homepage = "https://dandi.github.io/access-page/"
-Documentation = "https://github.com/dandi/s3-log-extraction/blob/master/README.md"
-Repository = "https://github.com/dandi/s3-log-extraction/"
-Issues = "https://github.com/dandi/s3-log-extraction/issues"
-Changelog = "https://github.com/dandi/s3-log-extraction/blob/master/CHANGELOG.md"
+Documentation = "https://github.com/dandi/dandi-s3-log-extraction/blob/master/README.md"
+Repository = "https://github.com/dandi/dandi-s3-log-extraction/"
+Issues = "https://github.com/dandi/dandi-s3-log-extraction/issues"
+Changelog = "https://github.com/dandi/dandi-s3-log-extraction/blob/master/CHANGELOG.md"
 
 [project.scripts]
 dandis3logextraction = "dandi_s3_log_extraction._command_line_interface._cli:_dandis3logextraction_cli"
