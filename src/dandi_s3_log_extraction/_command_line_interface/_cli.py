@@ -6,6 +6,7 @@ import typing
 import rich_click
 import s3_log_extraction
 
+from ..database import bundle_database
 from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
 from ..summarize import generate_dandiset_summaries, generate_dandiset_totals
 
@@ -117,6 +118,13 @@ def _stop_extraction_cli(max_timeout_in_seconds: int = 600) -> None:
 @_dandis3logextraction_cli.group(name="update")
 def _update_cli() -> None:
     pass
+
+
+# dandis3logextraction update database
+@_update_cli.command(name="database")
+def _bundle_database_cli() -> None:
+    """Update (or create) a bundled Parquet database for easier sharing."""
+    bundle_database()
 
 
 # dandis3logextraction update summaries
