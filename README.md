@@ -1,4 +1,8 @@
 <div align="center">
+  <picture>
+    <img alt="dandi-s3-log-extraction logo" src="https://raw.githubusercontent.com/dandi/dandi-s3-log-extraction/main/docs/dandi-s3-log-extraction-logo.svg" width="200">
+  </picture>
+
 <h1>DANDI S3 Log Extraction</h1>
 <p>
     <a href="https://pypi.org/project/s3-log-extraction/"><img alt="Supported Python versions" src="https://img.shields.io/pypi/pyversions/s3-log-extraction.svg"></a>
