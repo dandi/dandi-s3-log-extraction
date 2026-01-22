@@ -18,8 +18,9 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
     test_extraction_dir = test_dir / "extraction"
     test_summary_dir = test_dir / "summaries"
+
     shutil.copytree(src=expected_extraction_dir, dst=test_extraction_dir)
-    s3_log_extraction.ip_utils.index_ips(cache_directory=test_dir)
+    s3_log_extraction.ip_utils.index_ips(cache_directory=test_dir, seed=0)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(cache_directory=test_dir, workers=1)
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=test_summary_dir)

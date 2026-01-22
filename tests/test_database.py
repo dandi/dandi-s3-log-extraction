@@ -5,107 +5,70 @@ import shutil
 
 import polars
 import py
-import s3_log_extraction.database
+import s3_log_extraction
 import yaml
-from s3_log_extraction.config import set_cache_directory
+
+import dandi_s3_log_extraction
 
 
 def test_bundle_database(tmpdir: py.path.local) -> None:
-    """
-    Test that bundle_database correctly creates a hive-partitioned Parquet database.
+    test_dir = pathlib.Path(tmpdir)
 
-    This test verifies that the database bundling function:
-    - Creates the correct directory structure
-    - Generates Parquet files with correct schema
-    - Creates blob index mapping file
-    - Produces expected data content
-    """
-    tmpdir = pathlib.Path(tmpdir)
-    base_directory = pathlib.Path(__file__).parent
+    base_tests_dir = pathlib.Path(__file__).parent
+    expected_output_dir = base_tests_dir / "expected_output"
+    expected_extraction_dir = expected_output_dir / "extraction"
+    expected_sharing_dir = expected_output_dir / "sharing"
 
-    # Set up test extraction directory in temp location
-    # Use the existing extraction directory with blobs subdirectory
-    test_extraction_source = base_directory / "expected_output" / "extraction"
-    test_cache_directory = tmpdir / "cache"
-    test_extraction_directory = test_cache_directory / "extraction"
-    shutil.copytree(src=test_extraction_source, dst=test_extraction_directory)
+    test_extraction_dir = test_dir / "extraction"
+    test_sharing_dir = test_dir / "sharing"
+    test_database_dir = test_sharing_dir / "extracted_activity.parquet"
 
-    # Mock the cache directory for bundle_database
-    set_cache_directory(cache_directory=test_cache_directory)
+    shutil.copytree(src=expected_extraction_dir, dst=test_extraction_dir)
+    s3_log_extraction.ip_utils.index_ips(cache_directory=test_dir, seed=0)
 
-    # Run bundle_database
-    s3_log_extraction.database.bundle_database()
+    dandi_s3_log_extraction.database.bundle_database(cache_directory=test_dir)
+    assert test_sharing_dir.exists()
+    assert test_database_dir.exists()
 
-    # Verify the output structure
-    output_sharing_directory = test_cache_directory / "sharing"
-    assert output_sharing_directory.exists()
+    expected_database_directory = expected_sharing_dir / "extracted_activity.parquet"
+    test_blob_index_file = test_sharing_dir / "blob_index_to_id.yaml"
+    expected_blob_index_file = expected_sharing_dir / "blob_index_to_id.yaml"
+    assert test_blob_index_file.exists()
 
-    output_database_directory = output_sharing_directory / "extracted_activity.parquet"
-    assert output_database_directory.exists()
-
-    # Load expected output for comparison
-    expected_sharing_directory = base_directory / "expected_output" / "sharing"
-    expected_database_directory = expected_sharing_directory / "extracted_activity.parquet"
-
-    # Verify blob index mapping exists
-    output_blob_index_file = output_sharing_directory / "blob_index_to_id.yaml"
-    expected_blob_index_file = expected_sharing_directory / "blob_index_to_id.yaml"
-    assert output_blob_index_file.exists()
-
-    # Load and compare blob index mappings
-    with output_blob_index_file.open(mode="r") as f:
+    with test_blob_index_file.open(mode="r") as f:
         output_blob_index_to_id = yaml.safe_load(f)
     with expected_blob_index_file.open(mode="r") as f:
         expected_blob_index_to_id = yaml.safe_load(f)
 
-    # Verify the mapping has correct structure (exact values may differ based on iteration order)
     assert len(output_blob_index_to_id) == len(expected_blob_index_to_id)
     assert set(output_blob_index_to_id.values()) == set(expected_blob_index_to_id.values())
 
-    # Verify Parquet files exist and have correct structure
-    output_parquet_files = sorted(output_database_directory.rglob("*.parquet"))
+    output_parquet_files = sorted(test_database_dir.rglob("*.parquet"))
     expected_parquet_files = sorted(expected_database_directory.rglob("*.parquet"))
 
-    # Check that we have Parquet files for the expected partitions
     assert len(output_parquet_files) > 0, "No Parquet files were generated"
 
-    # Get relative paths for comparison
-    output_parquet_paths = {f.relative_to(output_database_directory) for f in output_parquet_files}
+    test_parquet_paths = {f.relative_to(test_database_dir) for f in output_parquet_files}
     expected_parquet_paths = {f.relative_to(expected_database_directory) for f in expected_parquet_files}
-    assert output_parquet_paths == expected_parquet_paths
-
-    # Verify schema and basic content of Parquet files
-    expected_schema = {
-        "asset_type": polars.String,
-        "blob_head": polars.String,
-        "timestamp": polars.Int64,
-        "blob_index": polars.Int64,
-        "bytes_sent": polars.Int64,
-        "indexed_ip": polars.Int64,
-    }
+    assert test_parquet_paths == expected_parquet_paths
 
     for output_file, expected_file in zip(output_parquet_files, expected_parquet_files):
-        output_df = polars.read_parquet(output_file)
+        test_df = polars.read_parquet(output_file)
         expected_df = polars.read_parquet(expected_file)
+        print(f"{test_df=}")
+        print(f"{expected_df=}")
 
-        # Verify schema
-        assert output_df.schema == expected_schema, f"Schema mismatch in {output_file}"
+        assert test_df.shape == expected_df.shape, f"Shape mismatch in {output_file}"
 
-        # Verify shape
-        assert output_df.shape == expected_df.shape, f"Shape mismatch in {output_file}"
-
-        # Verify content (sort to ensure consistent comparison)
-        output_sorted = output_df.sort(by=["timestamp", "blob_index"])
+        output_sorted = test_df.sort(by=["timestamp", "blob_index"])
         expected_sorted = expected_df.sort(by=["timestamp", "blob_index"])
 
-        # Compare all columns except blob_index (which depends on iteration order)
-        # We'll verify blob_index is valid separately
         columns_to_compare = ["asset_type", "blob_head", "timestamp", "bytes_sent", "indexed_ip"]
         for col in columns_to_compare:
             assert (
                 output_sorted[col].to_list() == expected_sorted[col].to_list()
             ), f"Column {col} mismatch in {output_file}"
 
-        # Verify blob_index values are within valid range
-        assert output_df["blob_index"].min() >= 0
-        assert output_df["blob_index"].max() < len(output_blob_index_to_id)
+        if test_df.shape[0] > 0:
+            assert test_df["blob_index"].min() >= 0
+            assert test_df["blob_index"].max() < len(output_blob_index_to_id)

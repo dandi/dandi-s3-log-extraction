@@ -1,13 +1,12 @@
 import itertools
 import pathlib
 
+import s3_log_extraction
 import tqdm
 import yaml
 
-from ..config import get_cache_directory
 
-
-def bundle_database():
+def bundle_database(cache_directory: str | pathlib.Path | None = None) -> None:
     """
     Bundles the current results of the extraction cache into a hive-partitioned Parquet database.
 
@@ -15,7 +14,9 @@ def bundle_database():
     """
     import polars
 
-    cache_directory = get_cache_directory()
+    cache_directory = (
+        pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
+    )
     extraction_directory = cache_directory / "extraction"
     sharing_directory = cache_directory / "sharing"
     sharing_directory.mkdir(exist_ok=True)
@@ -85,7 +86,15 @@ def bundle_database():
                     "blob_index": all_blob_indexes,
                     "bytes_sent": all_bytes_sent,
                     "indexed_ip": all_indexed_ips,
-                }
+                },
+                schema={
+                    "asset_type": polars.String,
+                    "blob_head": polars.String,
+                    "timestamp": polars.Int64,
+                    "blob_index": polars.UInt64,
+                    "bytes_sent": polars.Int64,
+                    "indexed_ip": polars.UInt64,
+                },
             )
 
             database_file_path = blob_head_partition_directory / "0.parquet"
