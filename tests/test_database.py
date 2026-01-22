@@ -55,8 +55,6 @@ def test_bundle_database(tmpdir: py.path.local) -> None:
     for output_file, expected_file in zip(output_parquet_files, expected_parquet_files):
         test_df = polars.read_parquet(output_file)
         expected_df = polars.read_parquet(expected_file)
-        print(f"{test_df=}")
-        print(f"{expected_df=}")
 
         assert test_df.shape == expected_df.shape, f"Shape mismatch in {output_file}"
 

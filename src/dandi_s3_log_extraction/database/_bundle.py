@@ -36,7 +36,7 @@ def bundle_database(cache_directory: str | pathlib.Path | None = None) -> None:
     database_directory.mkdir(exist_ok=True)
     for asset_type in ["blobs", "zarr"]:
         asset_type_key = asset_type[0]
-        asset_partition_directory = database_directory / f"asset_type={asset_type}"
+        asset_partition_directory = database_directory / f"asset_type={asset_type_key}"
         asset_partition_directory.mkdir(exist_ok=True)
 
         for blob_head in itertools.chain(range(10), list("abcdef")):
