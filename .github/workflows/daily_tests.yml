@@ -1,4 +1,4 @@
-name: Deploy daily tests
+name: Daily tests
 
 on:
   schedule:
@@ -31,12 +31,4 @@ jobs:
           subject: "CI Failure: dandi-s3-log-extraction Daily Tests"
           to: cody.c.baker.phd@gmail.com  # Add more with comma separation (no spaces)
           from: dandi-s3-log-extraction
-          body: "The daily test workflow failed, please check status at https://github.com/dandi/dandi-s3-log-extraction/actions/workflows/dailies.yml"
-
-# TODO: move to different workflow for badge
-#  DailyRemoteTests:
-#    uses: ./.github/workflows/remote_testing.yml
-#    secrets:
-#      IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
-#      IPINFO_API_KEY: ${{ secrets.IPINFO_API_KEY }}
-#      CODECOV_CREDENTIALS: ${{ secrets.CODECOV_CREDENTIALS }}
+          body: "The daily test workflow failed, please check status at https://github.com/dandi/dandi-s3-log-extraction/actions/workflows/daily_tests.yml"
