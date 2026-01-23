@@ -81,14 +81,14 @@ def test_extract_with_example_logs(tmpdir):
     """Test the extract command with example logs."""
     base_directory = pathlib.Path(__file__).parent
     test_logs_directory = base_directory / "example_logs"
-    
+
     # Only run if example logs exist
     if not test_logs_directory.exists():
         pytest.skip("Example logs directory not found")
-    
+
     tmpdir = pathlib.Path(tmpdir)
     output_directory = tmpdir / "test_cli_extraction"
-    
+
     result = subprocess.run(
         [
             sys.executable,
