@@ -29,11 +29,13 @@ The 'hard' collection contains many of the most difficult lines to extract as th
 Tests for the command-line interface using subprocess execution. These tests:
 - Verify all CLI commands and subcommands work correctly
 - Test help text and error handling
-- Use `coverage run` to capture subprocess coverage
+- Run CLI commands directly via subprocess
+
+Coverage for CLI code is captured by pytest's `--cov` flag at the test execution level.
 
 To run CLI tests with coverage:
 ```bash
-pytest tests/test_cli.py -vv --cov=dandi_s3_log_extraction --cov-append
+pytest tests/test_cli.py -vv --cov=dandi_s3_log_extraction
 ```
 
 The coverage configuration in `pyproject.toml` enables parallel and subprocess coverage collection.

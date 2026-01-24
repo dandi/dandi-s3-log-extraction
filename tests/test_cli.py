@@ -9,9 +9,9 @@ import pytest
 
 
 def _run_cli_command(*args):
-    """Helper function to run CLI commands with coverage."""
+    """Helper function to run CLI commands."""
     return subprocess.run(
-        [sys.executable, "-m", "coverage", "run", "-m", "dandi_s3_log_extraction._command_line_interface._cli", *args],
+        [sys.executable, "-m", "dandi_s3_log_extraction._command_line_interface._cli", *args],
         capture_output=True,
         text=True,
     )
@@ -92,9 +92,6 @@ def test_extract_with_example_logs(tmpdir):
     result = subprocess.run(
         [
             sys.executable,
-            "-m",
-            "coverage",
-            "run",
             "-m",
             "dandi_s3_log_extraction._command_line_interface._cli",
             "extract",
