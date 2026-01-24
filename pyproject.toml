@@ -70,10 +70,7 @@ remote = [
 sharing = [
     "polars",
 ]
-test = ["pytest"]
-coverage = ["pytest-cov", "pytest-env", "coverage[toml]"]
-dev = ["ipython", "pre-commit"]
-all = ["dandi_s3_log_extraction[geolocation,remote,sharing,test,coverage,dev]"]
+all = ["dandi_s3_log_extraction[geolocation,remote,sharing]"]
 
 [project.urls]
 Homepage = "https://dandi.github.io/access-page/"

@@ -40,7 +40,7 @@ jobs:
         run: python -c "import dandi_s3_log_extraction"
 
       - name: Full installation
-        run: pip install --no-cache-dir .[all]
+        run: pip install --no-cache-dir .[all] --group all
 
       - name: Display installed packages and their sources for debugging
         run: pip list
