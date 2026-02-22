@@ -195,7 +195,7 @@ def _get_dandi_asset_info(
         raise RuntimeError(message)
     multiple_paths_same_dandiset = json.loads(gzip.decompress(data=response.content))
 
-    content_id_to_local_content_directory: dict[str, str] = dict()
+    content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)
     for content_id, unique_dandiset_id_and_path in tqdm.tqdm(
         iterable=content_id_to_unique_dandiset_path.items(),
@@ -211,7 +211,7 @@ def _get_dandi_asset_info(
             if ".zarr" in unique_path
             else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
         )
-        content_id_to_local_content_directory[content_id] = local_content_directory
+        content_id_to_dandiset_path[content_id] = unique_path
         dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
 
     # The previous loop is 'bottom-up' from provided content ID mappings from the DANDI Cache
@@ -221,7 +221,7 @@ def _get_dandi_asset_info(
             local_content_directory = timestamps_file_path.parent
             content_id = local_content_directory.name
 
-            if content_id in content_id_to_local_content_directory:
+            if content_id in content_id_to_dandiset_path:
                 continue  # This content ID already has a unique Dandiset association
 
             if content_id in multiple_paths_same_dandiset:
@@ -230,7 +230,7 @@ def _get_dandi_asset_info(
 
             dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
 
-    return dandiset_id_to_local_content_directories, content_id_to_local_content_directory
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
 def _summarize_dandiset(
