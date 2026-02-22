@@ -65,11 +65,11 @@ def generate_dandiset_summaries(
         raise ValueError(message)
     max_workers = _handle_max_workers(workers=workers)
 
-    content_id_to_unique_dandiset_path_url = (
+    content_id_to_unique_dandiset_path_url = content_id_to_unique_dandiset_path_url or (
         "https://raw.githubusercontent.com/dandi-cache/content-id-to-unique-dandiset-path/"
         "refs/heads/min/derivatives/content_id_to_unique_dandiset_path.min.json.gz"
     )
-    multiple_paths_same_dandiset_url = (
+    multiple_paths_same_dandiset_url = multiple_paths_same_dandiset_url or (
         "https://raw.githubusercontent.com/dandi-cache/content-id-to-unique-dandiset-path/"
         "refs/heads/min/derivatives/multiple_paths_same_dandiset.min.json.gz"
     )
