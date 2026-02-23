@@ -23,7 +23,7 @@ def generate_dandiset_summaries(
     content_id_to_unique_dandiset_path_url: str | None = None,
     multiple_paths_same_dandiset_url: str | None = None,
     api_url: str | None = None,
-    associated: bool = True,
+    unassociated: bool = False,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
@@ -51,9 +51,8 @@ def generate_dandiset_summaries(
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
-    associated : bool, optional
-        Whether to generate summaries based on the current unique associations between content IDs and Dandisets,
-        or to generate summaries based on current unassociated status.
+    unassociated : bool, optional
+        Whether to generate summaries based on current unassociated status.
     """
     import dandi.dandiapi
 
@@ -82,12 +81,36 @@ def generate_dandiset_summaries(
         cache_type="index_to_region", cache_directory=cache_directory
     )
 
-    if associated:
-        dandiset_id_to_local_content_directories, content_id_to_local_content_directory = (
-            _get_associated_dandi_asset_info(
-                content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
-                cache_directory=cache_directory,
-            )
+    if unassociated:
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_unassociated_dandi_asset_info(
+            content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+            multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
+            cache_directory=cache_directory,
+        )
+
+        # Special key for no current association
+        dandiset_id = "unassociated"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_dandiset_path,
+        )
+
+        # Special key for multiple or unknown associations
+        dandiset_id = "undetermined"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_dandiset_path,
+        )
+    else:
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_associated_dandi_asset_info(
+            content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+            cache_directory=cache_directory,
         )
 
         client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
@@ -121,7 +144,7 @@ def generate_dandiset_summaries(
                     blob_directories=blob_directories,
                     summary_directory=summary_directory,
                     index_to_region=index_to_region,
-                    blob_id_to_asset_path=content_id_to_local_content_directory,
+                    blob_id_to_asset_path=content_id_to_dandiset_path,
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -132,7 +155,7 @@ def generate_dandiset_summaries(
                         blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
                         summary_directory=summary_directory,
                         index_to_region=index_to_region,
-                        blob_id_to_asset_path=content_id_to_local_content_directory,
+                        blob_id_to_asset_path=content_id_to_dandiset_path,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
                 ]
@@ -152,40 +175,11 @@ def generate_dandiset_summaries(
                     ),
                     maxlen=0,
                 )
-    else:
-        dandiset_id_to_local_content_directories, content_id_to_local_content_directory = (
-            _get_unassociated_dandi_asset_info(
-                content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
-                multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
-                cache_directory=cache_directory,
-            )
-        )
-
-        # Special key for no current association
-        dandiset_id = "unassociated"
-        _summarize_dandiset(
-            dandiset_id=dandiset_id,
-            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
-            summary_directory=summary_directory,
-            index_to_region=index_to_region,
-            blob_id_to_asset_path=content_id_to_local_content_directory,
-        )
-
-        # Special key for multiple or unknown associations
-        dandiset_id = "undetermined"
-        _summarize_dandiset(
-            dandiset_id=dandiset_id,
-            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
-            summary_directory=summary_directory,
-            index_to_region=index_to_region,
-            blob_id_to_asset_path=content_id_to_local_content_directory,
-        )
 
 
 def _get_associated_dandi_asset_info(
     *,
     content_id_to_unique_dandiset_path_url: str,
-    multiple_paths_same_dandiset_url: str,
     cache_directory: pathlib.Path,
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
