@@ -195,6 +195,16 @@ def _bundle_database_cli() -> None:
     type=rich_click.STRING,
     default=None,
 )
+@rich_click.option(
+    "--associated",
+    help=(
+        "Whether to generate summaries based on the current unique associations between content IDs and Dandisets,"
+        "or to generate summaries based on current unassociated status."
+    ),
+    required=False,
+    type=rich_click.BOOL,
+    default=True,
+)
 def _update_summaries_cli(
     mode: typing.Literal["dandi", "archive"] | None = None,
     pick: str | None = None,
@@ -203,6 +213,7 @@ def _update_summaries_cli(
     content_id_to_unique_dandiset_path_url: str | None = None,
     multiple_paths_same_dandiset_url: str | None = None,
     api_url: str | None = None,
+    associated: bool = True,
 ) -> None:
     """Generate condensed summaries of activity."""
     match mode:
@@ -218,6 +229,7 @@ def _update_summaries_cli(
                 content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
                 multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
                 api_url=api_url,
+                associated=associated,
             )
 
 

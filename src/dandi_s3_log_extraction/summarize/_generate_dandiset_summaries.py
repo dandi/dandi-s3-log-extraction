@@ -23,6 +23,7 @@ def generate_dandiset_summaries(
     content_id_to_unique_dandiset_path_url: str | None = None,
     multiple_paths_same_dandiset_url: str | None = None,
     api_url: str | None = None,
+    associated: bool = True,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
@@ -50,6 +51,9 @@ def generate_dandiset_summaries(
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
+    associated : bool, optional
+        Whether to generate summaries based on the current unique associations between content IDs and Dandisets,
+        or to generate summaries based on current unassociated status.
     """
     import dandi.dandiapi
 
@@ -78,98 +82,146 @@ def generate_dandiset_summaries(
         cache_type="index_to_region", cache_directory=cache_directory
     )
 
-    dandiset_id_to_local_content_directories, content_id_to_local_content_directory = _get_dandi_asset_info(
-        content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
-        multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
-        cache_directory=cache_directory,
-    )
-
-    client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
-    if pick is None and skip is not None:
-        dandiset_ids_to_exclude = {dandiset_id: True for dandiset_id in skip}
-        dandiset_ids_to_summarize = [
-            dandiset.identifier
-            for dandiset in client.get_dandisets()
-            if dandiset_ids_to_exclude.get(dandiset.identifier, False) is False
-        ]
-    elif pick is not None and skip is None:
-        dandiset_ids_to_summarize = pick
-    else:
-        dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
-
-    if max_workers == 1:
-        for dandiset_id in tqdm.tqdm(
-            iterable=dandiset_ids_to_summarize,
-            total=len(dandiset_ids_to_summarize),
-            desc="Summarizing Dandisets",
-            position=0,
-            leave=True,
-            mininterval=5.0,
-            smoothing=0,
-            unit="dandisets",
-        ):
-            blob_directories = dandiset_id_to_local_content_directories.get(dandiset_id, [])
-
-            _summarize_dandiset(
-                dandiset_id=dandiset_id,
-                blob_directories=blob_directories,
-                summary_directory=summary_directory,
-                index_to_region=index_to_region,
-                blob_id_to_asset_path=content_id_to_local_content_directory,
+    if associated:
+        dandiset_id_to_local_content_directories, content_id_to_local_content_directory = (
+            _get_associated_dandi_asset_info(
+                content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+                cache_directory=cache_directory,
             )
-    else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(
-                    _summarize_dandiset,
+        )
+
+        client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
+        if pick is None and skip is not None:
+            dandiset_ids_to_exclude = {dandiset_id: True for dandiset_id in skip}
+            dandiset_ids_to_summarize = [
+                dandiset.identifier
+                for dandiset in client.get_dandisets()
+                if dandiset_ids_to_exclude.get(dandiset.identifier, False) is False
+            ]
+        elif pick is not None and skip is None:
+            dandiset_ids_to_summarize = pick
+        else:
+            dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
+
+        if max_workers == 1:
+            for dandiset_id in tqdm.tqdm(
+                iterable=dandiset_ids_to_summarize,
+                total=len(dandiset_ids_to_summarize),
+                desc="Summarizing Dandisets",
+                position=0,
+                leave=True,
+                mininterval=5.0,
+                smoothing=0,
+                unit="dandisets",
+            ):
+                blob_directories = dandiset_id_to_local_content_directories.get(dandiset_id, [])
+
+                _summarize_dandiset(
                     dandiset_id=dandiset_id,
-                    blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+                    blob_directories=blob_directories,
                     summary_directory=summary_directory,
                     index_to_region=index_to_region,
                     blob_id_to_asset_path=content_id_to_local_content_directory,
                 )
-                for dandiset_id in dandiset_ids_to_summarize
-            ]
-            collections.deque(
-                (
-                    future.result()
-                    for future in tqdm.tqdm(
-                        iterable=concurrent.futures.as_completed(futures),
-                        total=len(dandiset_ids_to_summarize),
-                        desc="Summarizing Dandisets",
-                        position=0,
-                        leave=True,
-                        mininterval=5.0,
-                        smoothing=0,
-                        unit="dandisets",
+        else:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(
+                        _summarize_dandiset,
+                        dandiset_id=dandiset_id,
+                        blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+                        summary_directory=summary_directory,
+                        index_to_region=index_to_region,
+                        blob_id_to_asset_path=content_id_to_local_content_directory,
                     )
-                ),
-                maxlen=0,
+                    for dandiset_id in dandiset_ids_to_summarize
+                ]
+                collections.deque(
+                    (
+                        future.result()
+                        for future in tqdm.tqdm(
+                            iterable=concurrent.futures.as_completed(futures),
+                            total=len(dandiset_ids_to_summarize),
+                            desc="Summarizing Dandisets",
+                            position=0,
+                            leave=True,
+                            mininterval=5.0,
+                            smoothing=0,
+                            unit="dandisets",
+                        )
+                    ),
+                    maxlen=0,
+                )
+    else:
+        dandiset_id_to_local_content_directories, content_id_to_local_content_directory = (
+            _get_unassociated_dandi_asset_info(
+                content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+                multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
+                cache_directory=cache_directory,
             )
+        )
 
-    # Special key for no current association
-    dandiset_id = "unassociated"
-    _summarize_dandiset(
-        dandiset_id=dandiset_id,
-        blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
-        summary_directory=summary_directory,
-        index_to_region=index_to_region,
-        blob_id_to_asset_path=content_id_to_local_content_directory,
-    )
+        # Special key for no current association
+        dandiset_id = "unassociated"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_local_content_directory,
+        )
 
-    # Special key for multiple or unknown associations
-    dandiset_id = "undetermined"
-    _summarize_dandiset(
-        dandiset_id=dandiset_id,
-        blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
-        summary_directory=summary_directory,
-        index_to_region=index_to_region,
-        blob_id_to_asset_path=content_id_to_local_content_directory,
-    )
+        # Special key for multiple or unknown associations
+        dandiset_id = "undetermined"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_local_content_directory,
+        )
 
 
-# TODO: add ember batch
-def _get_dandi_asset_info(
+def _get_associated_dandi_asset_info(
+    *,
+    content_id_to_unique_dandiset_path_url: str,
+    multiple_paths_same_dandiset_url: str,
+    cache_directory: pathlib.Path,
+) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
+    extraction_directory = cache_directory / "extraction"
+
+    response = requests.get(content_id_to_unique_dandiset_path_url)
+    if response.status_code != 200:
+        message = (
+            f"Failed to retrieve content ID to unique path mapping from {content_id_to_unique_dandiset_path_url} - "
+            f"status code {response.status_code}: {response.json()}"
+        )
+        raise RuntimeError(message)
+    content_id_to_unique_dandiset_path = json.loads(gzip.decompress(data=response.content))
+
+    content_id_to_dandiset_path: dict[str, str] = dict()
+    dandiset_id_to_local_content_directories = collections.defaultdict(list)
+    for content_id, unique_dandiset_id_and_path in tqdm.tqdm(
+        iterable=content_id_to_unique_dandiset_path.items(),
+        total=len(content_id_to_unique_dandiset_path),
+        desc="Mapping unique blob IDs to local paths",
+        unit="blobs",
+        smoothing=0,
+    ):
+        dandiset_id, unique_path = next(iter(unique_dandiset_id_and_path.items()))
+
+        local_content_directory = (
+            extraction_directory / "zarr" / content_id
+            if ".zarr" in unique_path
+            else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
+        )
+        content_id_to_dandiset_path[content_id] = unique_path
+        dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
+
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
+
+
+def _get_unassociated_dandi_asset_info(
     *,
     content_id_to_unique_dandiset_path_url: str,
     multiple_paths_same_dandiset_url: str,
@@ -197,38 +249,45 @@ def _get_dandi_asset_info(
 
     content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)
-    for content_id, unique_dandiset_id_and_path in tqdm.tqdm(
-        iterable=content_id_to_unique_dandiset_path.items(),
-        total=len(content_id_to_unique_dandiset_path),
-        desc="Mapping unique blob IDs to local paths",
-        unit="blobs",
-        smoothing=0,
-    ):
-        dandiset_id, unique_path = next(iter(unique_dandiset_id_and_path.items()))
-
-        local_content_directory = (
-            extraction_directory / "zarr" / content_id
-            if ".zarr" in unique_path
-            else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
-        )
-        content_id_to_dandiset_path[content_id] = unique_path
-        dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
 
     # The previous loop is 'bottom-up' from provided content ID mappings from the DANDI Cache
     # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
+    batch_size = 1_000_000
     for file_type in ["blobs", "zarr"]:
-        for timestamps_file_path in (extraction_directory / file_type).rglob(pattern="timestamps.txt"):
-            local_content_directory = timestamps_file_path.parent
-            content_id = local_content_directory.name
+        tqdm_iterable = tqdm.tqdm(
+            iterable=itertools.batched(
+                iterable=(extraction_directory / file_type).rglob(pattern="full_ips.txt"), n=batch_size
+            ),
+            total=0,
+            desc="Mapping unassociated blob IDs to local paths",
+            unit="batches",
+            smoothing=0,
+            position=0,
+            leave=True,
+        )
+        for batch in tqdm_iterable:
+            tqdm_iterable.total += 1
 
-            if content_id in content_id_to_dandiset_path:
-                continue  # This content ID already has a unique Dandiset association
+            for timestamps_file_path in tqdm.tqdm(
+                iterable=batch,
+                total=len(batch),
+                desc="Processing batch",
+                unit="files",
+                smoothing=0,
+                position=1,
+                leave=False,
+            ):
+                local_content_directory = timestamps_file_path.parent
+                content_id = local_content_directory.name
 
-            if content_id in multiple_paths_same_dandiset:
-                dandiset_id_to_local_content_directories["unassociated"].append(local_content_directory)
-                continue
+                if content_id in content_id_to_unique_dandiset_path:
+                    continue  # This content ID already has a unique Dandiset association
 
-            dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
+                if content_id in multiple_paths_same_dandiset:
+                    dandiset_id_to_local_content_directories["unassociated"].append(local_content_directory)
+                    continue
+
+                dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
 
     return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
