@@ -176,7 +176,7 @@ def _bundle_database_cli() -> None:
     default=None,
 )
 def _update_summaries_cli(
-    mode: typing.Literal["dandi", "archive"] | None = None,
+    mode: typing.Literal["archive"] | None = None,
     pick: str | None = None,
     skip: str | None = None,
     workers: int = -2,
@@ -201,7 +201,7 @@ def _update_summaries_cli(
         "Mode 'dandi' will map asset hashes to Dandisets and their content filenames. "
     ),
     required=False,
-    type=rich_click.Choice(choices=["dandi", "archive"]),
+    type=rich_click.Choice(choices=["archive"]),
     default=None,
 )
 def _update_totals_cli(mode: typing.Literal["dandi", "archive"] | None = None) -> None:
