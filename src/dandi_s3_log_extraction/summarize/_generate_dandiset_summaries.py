@@ -1,6 +1,7 @@
 import collections
 import concurrent.futures
 import gzip
+import itertools
 import json
 import pathlib
 
