@@ -3,7 +3,6 @@
 import pathlib
 import shutil
 
-import polars
 import py
 import s3_log_extraction
 import yaml
@@ -12,6 +11,8 @@ import dandi_s3_log_extraction
 
 
 def test_bundle_database(tmpdir: py.path.local) -> None:
+    import polars
+
     test_dir = pathlib.Path(tmpdir)
 
     base_tests_dir = pathlib.Path(__file__).parent

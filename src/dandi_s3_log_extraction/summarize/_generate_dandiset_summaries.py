@@ -1,6 +1,8 @@
 import collections
 import concurrent.futures
-import datetime
+import gzip
+import itertools
+import json
 import pathlib
 
 import pandas
@@ -8,7 +10,6 @@ import pydantic
 import requests
 import s3_log_extraction
 import tqdm
-import yaml
 
 from .._parallel._utils import _handle_max_workers
 
@@ -20,16 +21,19 @@ def generate_dandiset_summaries(
     pick: list[str] | None = None,
     skip: list[str] | None = None,
     workers: int = -2,
+    content_id_to_unique_dandiset_path_url: str | None = None,
+    multiple_paths_same_dandiset_url: str | None = None,
     api_url: str | None = None,
+    unassociated: bool = False,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
 
     Parameters
     ----------
-    summary_directory : pathlib.Path
-        Path to the folder that will contain all Dandiset summaries of the S3 access logs.
-        If `None`, the default summary directory from the configuration will be used.
+    cache_directory : pathlib.Path
+        Path to the folder containing all previously extracted S3 access logs.
+        If `None`, the default extraction directory from the configuration will be used.
     workers : int
         Number of workers to use for parallel processing.
         If -1, use all available cores. If -2, use all cores minus one.
@@ -39,12 +43,17 @@ def generate_dandiset_summaries(
         A list of Dandiset IDs to exclusively select when generating summaries.
     skip : list of strings, optional
         A list of Dandiset IDs to exclude when generating summaries.
+    content_id_to_unique_dandiset_path_url : str, optional
+        URL to retrieve the mapping of content IDs to unique Dandiset paths.
+        Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository.
+    multiple_paths_same_dandiset_url : str, optional
+        URL to retrieve the mapping of content IDs that have multiple paths within the same Dandiset
+        Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository.
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
-    cache_directory : pathlib.Path, optional
-        Path to the folder containing all previously extracted S3 access logs.
-        If `None`, the default extraction directory from the configuration will be used.
+    unassociated : bool, optional
+        Whether to generate summaries based on current unassociated status.
     """
     import dandi.dandiapi
 
@@ -60,199 +69,222 @@ def generate_dandiset_summaries(
         raise ValueError(message)
     max_workers = _handle_max_workers(workers=workers)
 
-    index_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="index_to_region")
-
-    # TODO: record and only update basic DANDI stuff based on mtime or etag
-    dandiset_id_to_blob_directories, blob_id_to_asset_path = _get_dandi_asset_info(
-        api_url=api_url, cache_directory=cache_directory
+    content_id_to_unique_dandiset_path_url = content_id_to_unique_dandiset_path_url or (
+        "https://raw.githubusercontent.com/dandi-cache/content-id-to-unique-dandiset-path/"
+        "refs/heads/min/derivatives/content_id_to_unique_dandiset_path.min.json.gz"
+    )
+    multiple_paths_same_dandiset_url = multiple_paths_same_dandiset_url or (
+        "https://raw.githubusercontent.com/dandi-cache/content-id-to-unique-dandiset-path/"
+        "refs/heads/min/derivatives/multiple_paths_same_dandiset.min.json.gz"
     )
 
-    # TODO: cache even the dandiset listing and leverage etags
-    client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
-    if pick is None and skip is not None:
-        dandiset_ids_to_exclude = {dandiset_id: True for dandiset_id in skip}
-        dandiset_ids_to_summarize = [
-            dandiset.identifier
-            for dandiset in client.get_dandisets()
-            if dandiset_ids_to_exclude.get(dandiset.identifier, False) is False
-        ]
-    elif pick is not None and skip is None:
-        dandiset_ids_to_summarize = pick
-    else:
-        dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
+    index_to_region = s3_log_extraction.ip_utils.load_ip_cache(
+        cache_type="index_to_region", cache_directory=cache_directory
+    )
 
-    if max_workers == 1:
-        for dandiset_id in tqdm.tqdm(
-            iterable=dandiset_ids_to_summarize,
-            total=len(dandiset_ids_to_summarize),
-            desc="Summarizing Dandisets",
-            position=0,
-            leave=True,
-            mininterval=5.0,
-            smoothing=0,
-            unit="dandisets",
-        ):
-            blob_directories = dandiset_id_to_blob_directories.get(dandiset_id, [])
+    if unassociated:
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_unassociated_dandi_asset_info(
+            content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+            multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
+            cache_directory=cache_directory,
+        )
 
-            _summarize_dandiset(
-                dandiset_id=dandiset_id,
-                blob_directories=blob_directories,
-                summary_directory=summary_directory,
-                index_to_region=index_to_region,
-                blob_id_to_asset_path=blob_id_to_asset_path,
-            )
+        # Special key for no current association
+        dandiset_id = "unassociated"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_dandiset_path,
+        )
+
+        # Special key for multiple or unknown associations
+        dandiset_id = "undetermined"
+        _summarize_dandiset(
+            dandiset_id=dandiset_id,
+            blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+            summary_directory=summary_directory,
+            index_to_region=index_to_region,
+            blob_id_to_asset_path=content_id_to_dandiset_path,
+        )
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(
-                    _summarize_dandiset,
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_associated_dandi_asset_info(
+            content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
+            cache_directory=cache_directory,
+        )
+
+        client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
+        if pick is None and skip is not None:
+            dandiset_ids_to_exclude = {dandiset_id: True for dandiset_id in skip}
+            dandiset_ids_to_summarize = [
+                dandiset.identifier
+                for dandiset in client.get_dandisets()
+                if dandiset_ids_to_exclude.get(dandiset.identifier, False) is False
+            ]
+        elif pick is not None and skip is None:
+            dandiset_ids_to_summarize = pick
+        else:
+            dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
+
+        if max_workers == 1:
+            for dandiset_id in tqdm.tqdm(
+                iterable=dandiset_ids_to_summarize,
+                total=len(dandiset_ids_to_summarize),
+                desc="Summarizing Dandisets",
+                position=0,
+                leave=True,
+                mininterval=5.0,
+                smoothing=0,
+                unit="dandisets",
+            ):
+                blob_directories = dandiset_id_to_local_content_directories.get(dandiset_id, [])
+
+                _summarize_dandiset(
                     dandiset_id=dandiset_id,
-                    blob_directories=dandiset_id_to_blob_directories.get(dandiset_id, []),
+                    blob_directories=blob_directories,
                     summary_directory=summary_directory,
                     index_to_region=index_to_region,
-                    blob_id_to_asset_path=blob_id_to_asset_path,
+                    blob_id_to_asset_path=content_id_to_dandiset_path,
                 )
-                for dandiset_id in dandiset_ids_to_summarize
-            ]
-            collections.deque(
-                (
-                    future.result()
-                    for future in tqdm.tqdm(
-                        iterable=concurrent.futures.as_completed(futures),
-                        total=len(dandiset_ids_to_summarize),
-                        desc="Summarizing Dandisets",
-                        position=0,
-                        leave=True,
-                        mininterval=5.0,
-                        smoothing=0,
-                        unit="dandisets",
+        else:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(
+                        _summarize_dandiset,
+                        dandiset_id=dandiset_id,
+                        blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
+                        summary_directory=summary_directory,
+                        index_to_region=index_to_region,
+                        blob_id_to_asset_path=content_id_to_dandiset_path,
                     )
-                ),
-                maxlen=0,
-            )
-
-    # Special key for multiple associations
-    dandiset_id = "undetermined"
-    _summarize_dandiset(
-        dandiset_id=dandiset_id,
-        blob_directories=dandiset_id_to_blob_directories.get(dandiset_id, []),
-        summary_directory=summary_directory,
-        index_to_region=index_to_region,
-        blob_id_to_asset_path=blob_id_to_asset_path,
-    )
-
-    # Special key for no current association
-    dandiset_id = "unassociated"
-    _summarize_dandiset(
-        dandiset_id=dandiset_id,
-        blob_directories=dandiset_id_to_blob_directories.get(dandiset_id, []),
-        summary_directory=summary_directory,
-        index_to_region=index_to_region,
-        blob_id_to_asset_path=blob_id_to_asset_path,
-    )
+                    for dandiset_id in dandiset_ids_to_summarize
+                ]
+                collections.deque(
+                    (
+                        future.result()
+                        for future in tqdm.tqdm(
+                            iterable=concurrent.futures.as_completed(futures),
+                            total=len(dandiset_ids_to_summarize),
+                            desc="Summarizing Dandisets",
+                            position=0,
+                            leave=True,
+                            mininterval=5.0,
+                            smoothing=0,
+                            unit="dandisets",
+                        )
+                    ),
+                    maxlen=0,
+                )
 
 
-# TODO: add ember batch
-def _get_dandi_asset_info(
-    *, use_cache: bool = True, api_url: str | None = None, cache_directory: pathlib.Path
+def _get_associated_dandi_asset_info(
+    *,
+    content_id_to_unique_dandiset_path_url: str,
+    cache_directory: pathlib.Path,
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
-    dandi_cache_directory = cache_directory / "dandi"
-    dandi_cache_directory.mkdir(exist_ok=True)
 
-    date = datetime.datetime.now().date().strftime("%Y_%m")
-    monthly_dandiset_id_to_blob_directories_cache_file_path = (
-        dandi_cache_directory / f"dandiset_id_to_blob_directories_{date}.yaml"
-    )
-    monthly_blob_id_to_asset_path_cache_file_path = dandi_cache_directory / f"blob_id_to_asset_path_{date}.yaml"
-    if use_cache is True and monthly_blob_id_to_asset_path_cache_file_path.exists():
-        with monthly_dandiset_id_to_blob_directories_cache_file_path.open(mode="r") as file_stream:
-            yaml_content = yaml.safe_load(stream=file_stream)
-
-        dandiset_id_to_blob_directories = {
-            dandiset_id: [pathlib.Path(blob_directory) for blob_directory in blob_directories]
-            for dandiset_id, blob_directories in yaml_content.items()
-        }
-
-        with monthly_blob_id_to_asset_path_cache_file_path.open(mode="r") as file_stream:
-            blob_id_to_asset_path = yaml.safe_load(stream=file_stream)
-    else:
-        blob_id_to_paths_per_dandiset_url = (
-            "https://raw.githubusercontent.com/dandi-compute/blobs-to-paths/main/blob_id_to_path.min.json"
+    response = requests.get(content_id_to_unique_dandiset_path_url)
+    if response.status_code != 200:
+        message = (
+            f"Failed to retrieve content ID to unique path mapping from {content_id_to_unique_dandiset_path_url} - "
+            f"status code {response.status_code}: {response.json()}"
         )
-        response = requests.get(url=blob_id_to_paths_per_dandiset_url)
-        if response.status_code != 200:
-            message = (
-                f"Failed to retrieve blob ID to paths mapping from {blob_id_to_paths_per_dandiset_url} - "
-                f"status code {response.status_code}: {response.json()}"
-            )
-            raise RuntimeError(message)
+        raise RuntimeError(message)
+    content_id_to_unique_dandiset_path = json.loads(gzip.decompress(data=response.content))
 
-        blob_id_to_paths_per_dandiset = response.json()
+    content_id_to_dandiset_path: dict[str, str] = dict()
+    dandiset_id_to_local_content_directories = collections.defaultdict(list)
+    for content_id, unique_dandiset_id_and_path in tqdm.tqdm(
+        iterable=content_id_to_unique_dandiset_path.items(),
+        total=len(content_id_to_unique_dandiset_path),
+        desc="Mapping unique blob IDs to local paths",
+        unit="blobs",
+        smoothing=0,
+    ):
+        dandiset_id, unique_path = next(iter(unique_dandiset_id_and_path.items()))
 
-        blob_id_to_associated_asset_paths: dict[str, set[str]] = collections.defaultdict(set)
-        blob_directory_to_associated_dandiset_ids: dict[str, set[str]] = collections.defaultdict(set)
-        for blob_id, paths_per_dandiset in tqdm.tqdm(
-            iterable=blob_id_to_paths_per_dandiset.items(),
-            total=len(blob_id_to_paths_per_dandiset),
-            desc="Mapping blob IDs to Dandiset paths",
-            unit="blobs",
+        local_content_directory = (
+            extraction_directory / "zarr" / content_id
+            if ".zarr" in unique_path
+            else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
+        )
+        content_id_to_dandiset_path[content_id] = unique_path
+        dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
+
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
+
+
+def _get_unassociated_dandi_asset_info(
+    *,
+    content_id_to_unique_dandiset_path_url: str,
+    multiple_paths_same_dandiset_url: str,
+    cache_directory: pathlib.Path,
+) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
+    extraction_directory = cache_directory / "extraction"
+
+    response = requests.get(content_id_to_unique_dandiset_path_url)
+    if response.status_code != 200:
+        message = (
+            f"Failed to retrieve content ID to unique path mapping from {content_id_to_unique_dandiset_path_url} - "
+            f"status code {response.status_code}: {response.json()}"
+        )
+        raise RuntimeError(message)
+    content_id_to_unique_dandiset_path = json.loads(gzip.decompress(data=response.content))
+
+    response = requests.get(multiple_paths_same_dandiset_url)
+    if response.status_code != 200:
+        message = (
+            f"Failed to retrieve content ID to unique path mapping from {multiple_paths_same_dandiset_url} - "
+            f"status code {response.status_code}: {response.json()}"
+        )
+        raise RuntimeError(message)
+    multiple_paths_same_dandiset = json.loads(gzip.decompress(data=response.content))
+
+    content_id_to_dandiset_path: dict[str, str] = dict()
+    dandiset_id_to_local_content_directories = collections.defaultdict(list)
+
+    # The previous loop is 'bottom-up' from provided content ID mappings from the DANDI Cache
+    # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
+    batch_size = 1_000_000
+    for file_type in ["blobs", "zarr"]:
+        tqdm_iterable = tqdm.tqdm(
+            iterable=itertools.batched(
+                iterable=(extraction_directory / file_type).rglob(pattern="full_ips.txt"), n=batch_size
+            ),
+            total=0,
+            desc="Mapping unassociated blob IDs to local paths",
+            unit="batches",
             smoothing=0,
-        ):
-            for dandiset_id, asset_paths in paths_per_dandiset.items():
-                for asset_path in asset_paths:
-                    blob_id_to_associated_asset_paths[blob_id].add(asset_path)
+            position=0,
+            leave=True,
+        )
+        for batch in tqdm_iterable:
+            tqdm_iterable.total += 1
 
-                    blob_directory = (
-                        extraction_directory / "zarr" / blob_id
-                        if ".zarr" in asset_path
-                        else extraction_directory / "blobs" / blob_id[:3] / blob_id[3:6] / blob_id
-                    )
-                    blob_directory_to_associated_dandiset_ids[blob_directory].add(dandiset_id)
+            for timestamps_file_path in tqdm.tqdm(
+                iterable=batch,
+                total=len(batch),
+                desc="Processing batch",
+                unit="files",
+                smoothing=0,
+                position=1,
+                leave=False,
+            ):
+                local_content_directory = timestamps_file_path.parent
+                content_id = local_content_directory.name
 
-        dandiset_id_to_blob_directories = collections.defaultdict(list)
-        blob_id_to_asset_path = dict()
-        for blob_directory, dandiset_ids in blob_directory_to_associated_dandiset_ids.items():
-            blob_id = blob_directory.name
+                if content_id in content_id_to_unique_dandiset_path:
+                    continue  # This content ID already has a unique Dandiset association
 
-            # Case 1: multiple Dandisets linked to the same blob ID
-            # Cannot uniquely associate activity to a particular Dandiset, so mark Dandiset ID as undetermined
-            if len(dandiset_ids) > 1:
-                dandiset_id_to_blob_directories["undetermined"].append(blob_directory)
-                continue
-            dandiset_id = next(iter(dandiset_ids))
-            dandiset_id_to_blob_directories[dandiset_id].append(blob_directory)
+                if content_id in multiple_paths_same_dandiset:
+                    dandiset_id_to_local_content_directories["unassociated"].append(local_content_directory)
+                    continue
 
-            # Case 2: multiple assets linked to the same blob ID within a single Dandiset (including across versions)
-            # Able to uniquely associate activity to a particular Dandiset
-            # But may not be able to uniquely associate activity to a particular asset path
-            associated_asset_paths = blob_id_to_associated_asset_paths[blob_id]
-            if len(associated_asset_paths) > 1:
-                continue
-            blob_id_to_asset_path[blob_id] = next(iter(associated_asset_paths))
+                dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
 
-        for timestamps_file_path in (extraction_directory / "blobs").rglob(pattern="timestamps.txt"):
-            blob_directory = timestamps_file_path.parent
-
-            if blob_directory_to_associated_dandiset_ids.get(blob_directory, None) is None:
-                dandiset_id_to_blob_directories["unassociated"].append(blob_directory)
-
-        if (zarr_directory := extraction_directory / "zarr").is_dir():
-            for blob_directory in zarr_directory.iterdir():
-                if blob_directory_to_associated_dandiset_ids.get(blob_directory, None) is None:
-                    dandiset_id_to_blob_directories["unassociated"].append(blob_directory)
-
-        yaml_content = {
-            dandiset_id: [str(blob_directory) for blob_directory in blob_directories]
-            for dandiset_id, blob_directories in dandiset_id_to_blob_directories.items()
-        }
-        with monthly_dandiset_id_to_blob_directories_cache_file_path.open(mode="w") as file_stream:
-            yaml.dump(data=yaml_content, stream=file_stream)
-
-        with monthly_blob_id_to_asset_path_cache_file_path.open(mode="w") as file_stream:
-            yaml.dump(data=blob_id_to_asset_path, stream=file_stream)
-
-    return dandiset_id_to_blob_directories, blob_id_to_asset_path
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
 def _summarize_dandiset(
