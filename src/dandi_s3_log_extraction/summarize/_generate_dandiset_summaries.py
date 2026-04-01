@@ -407,7 +407,9 @@ def _summarize_dandiset_by_asset_per_week(
 
     data: dict[str, list] = {"week_start": sorted_week_starts}
     for asset_path in sorted_asset_paths:
-        data[asset_path] = [summarized_activity_by_asset_per_week[week].get(asset_path, 0) for week in sorted_week_starts]
+        data[asset_path] = [
+            summarized_activity_by_asset_per_week[week].get(asset_path, 0) for week in sorted_week_starts
+        ]
 
     summary_table = pandas.DataFrame(data=data)
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
