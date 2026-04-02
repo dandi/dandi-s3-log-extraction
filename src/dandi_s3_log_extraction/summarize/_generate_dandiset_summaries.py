@@ -1,5 +1,6 @@
 import collections
 import concurrent.futures
+import datetime
 import gzip
 import itertools
 import json
@@ -303,6 +304,11 @@ def _summarize_dandiset(
         summary_file_path=summary_directory / dandiset_id / "by_asset.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
     )
+    _summarize_dandiset_by_asset_per_week(
+        blob_directories=blob_directories,
+        summary_file_path=summary_directory / dandiset_id / "by_asset_per_week.tsv",
+        blob_id_to_asset_path=blob_id_to_asset_path,
+    )
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
@@ -353,6 +359,60 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
 def _timestamp_to_date_format(*, timestamp: str) -> str:
     date = f"20{timestamp[:2]}-{timestamp[2:4]}-{timestamp[4:6]}"
     return date
+
+
+def _timestamp_to_week_start_date(*, timestamp: str) -> str:
+    date = datetime.date(year=int("20" + timestamp[:2]), month=int(timestamp[2:4]), day=int(timestamp[4:6]))
+    week_start = date - datetime.timedelta(days=date.weekday())
+    return week_start.strftime("%Y-%m-%d")
+
+
+def _summarize_dandiset_by_asset_per_week(
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
+) -> None:
+    summarized_activity_by_asset_per_week: dict[str, dict[str, int]] = collections.defaultdict(
+        lambda: collections.defaultdict(int)
+    )
+    all_asset_paths: set[str] = set()
+    all_week_starts: set[str] = set()
+
+    for blob_directory in blob_directories:
+        blob_id = blob_directory.name
+
+        if not blob_directory.exists():
+            continue  # No extracted logs found (possible asset was never accessed); skip to next asset
+
+        asset_path = blob_id_to_asset_path.get(blob_id, "undetermined")
+
+        timestamps_file_path = blob_directory / "timestamps.txt"
+        week_starts = [
+            _timestamp_to_week_start_date(timestamp=timestamp)
+            for timestamp in timestamps_file_path.read_text().splitlines()
+        ]
+
+        bytes_sent_file_path = blob_directory / "bytes_sent.txt"
+        bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+
+        for week_start, bs in zip(week_starts, bytes_sent):
+            summarized_activity_by_asset_per_week[week_start][asset_path] += bs
+            all_week_starts.add(week_start)
+            all_asset_paths.add(asset_path)
+
+    if not summarized_activity_by_asset_per_week:
+        return
+
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    sorted_week_starts = sorted(all_week_starts)
+    sorted_asset_paths = sorted(all_asset_paths)
+
+    data: dict[str, list] = {"week_start": sorted_week_starts}
+    for asset_path in sorted_asset_paths:
+        data[asset_path] = [
+            summarized_activity_by_asset_per_week[week].get(asset_path, 0) for week in sorted_week_starts
+        ]
+
+    summary_table = pandas.DataFrame(data=data)
+    summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
 def _summarize_dandiset_by_asset(
