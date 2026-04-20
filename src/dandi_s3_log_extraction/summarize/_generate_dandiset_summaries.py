@@ -534,7 +534,7 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
             columns=["week_start", *asset_type_columns]
         )
     )
-    archive_summary.loc[:, asset_type_columns] = archive_summary.loc[:, asset_type_columns].astype(int)
+    archive_summary = archive_summary.astype(dtype={column_name: "int64" for column_name in asset_type_columns})
     archive_summary.sort_values(by="week_start", inplace=True)
 
     archive_summary_file_path = summary_directory / "archive" / "by_asset_type_per_week.tsv"
