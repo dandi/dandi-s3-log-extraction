@@ -530,9 +530,9 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
         return
 
     archive_summary = (
-        all_summary_data.groupby(by="week_start", as_index=False)[asset_type_columns].sum().reindex(
-            columns=["week_start", *asset_type_columns]
-        )
+        all_summary_data.groupby(by="week_start", as_index=False)[asset_type_columns]
+        .sum()
+        .reindex(columns=["week_start", *asset_type_columns])
     )
     archive_summary = archive_summary.astype(dtype={column_name: "int64" for column_name in asset_type_columns})
     archive_summary.sort_values(by="week_start", inplace=True)
