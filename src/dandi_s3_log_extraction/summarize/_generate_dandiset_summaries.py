@@ -14,6 +14,8 @@ import tqdm
 
 from .._parallel._utils import _handle_max_workers
 
+ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Video", "Miscellaneous")
+
 
 @pydantic.validate_call
 def generate_dandiset_summaries(
@@ -178,6 +180,8 @@ def generate_dandiset_summaries(
                     maxlen=0,
                 )
 
+    _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
+
 
 def _get_associated_dandi_asset_info(
     *,
@@ -309,6 +313,11 @@ def _summarize_dandiset(
         summary_file_path=summary_directory / dandiset_id / "by_asset_per_week.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
     )
+    _summarize_dandiset_by_asset_type_per_week(
+        blob_directories=blob_directories,
+        summary_file_path=summary_directory / dandiset_id / "by_asset_type_per_week.tsv",
+        blob_id_to_asset_path=blob_id_to_asset_path,
+    )
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
@@ -413,6 +422,124 @@ def _summarize_dandiset_by_asset_per_week(
 
     summary_table = pandas.DataFrame(data=data)
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _get_asset_type(*, asset_path: str) -> str:
+    suffixes = tuple(pathlib.Path(asset_path).suffixes)
+    suffix_set = {suffix.lower() for suffix in suffixes}
+
+    if ".nwb" in suffix_set:
+        return "Neurophysiology"
+
+    if (
+        ".nii" in suffix_set
+        or ".ome" in suffix_set
+        or ".tiff" in suffix_set
+        or ".tif" in suffix_set
+        or ".bvecs" in suffix_set
+        or ".bvals" in suffix_set
+        or ".trk" in suffix_set
+        or (".zarr" in suffix_set and len(suffixes) == 1)
+    ):
+        return "Microscopy"
+
+    if (
+        ".mp4" in suffix_set
+        or ".mov" in suffix_set
+        or ".wmv" in suffix_set
+        or ".avi" in suffix_set
+        or ".mkv" in suffix_set
+    ):
+        return "Video"
+
+    return "Miscellaneous"
+
+
+def _sort_asset_type_columns(*, column_names: list[str]) -> list[str]:
+    known_columns = [column_name for column_name in ASSET_TYPES_IN_ORDER if column_name in column_names]
+    extra_columns = sorted(set(column_names).difference(ASSET_TYPES_IN_ORDER))
+    return [*known_columns, *extra_columns]
+
+
+def _summarize_dandiset_by_asset_type_per_week(
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
+) -> None:
+    summarized_activity_by_asset_type_per_week: dict[str, dict[str, int]] = collections.defaultdict(
+        lambda: collections.defaultdict(int)
+    )
+    all_asset_types: set[str] = set()
+    all_week_starts: set[str] = set()
+
+    for blob_directory in blob_directories:
+        blob_id = blob_directory.name
+
+        if not blob_directory.exists():
+            continue  # No extracted logs found (possible asset was never accessed); skip to next asset
+
+        asset_path = blob_id_to_asset_path.get(blob_id, "undetermined")
+        asset_type = _get_asset_type(asset_path=asset_path)
+        all_asset_types.add(asset_type)
+
+        timestamps_file_path = blob_directory / "timestamps.txt"
+        week_starts = [
+            _timestamp_to_week_start_date(timestamp=timestamp)
+            for timestamp in timestamps_file_path.read_text().splitlines()
+        ]
+
+        bytes_sent_file_path = blob_directory / "bytes_sent.txt"
+        bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+
+        for week_start, bytes_sent_value in zip(week_starts, bytes_sent):
+            summarized_activity_by_asset_type_per_week[week_start][asset_type] += bytes_sent_value
+            all_week_starts.add(week_start)
+
+    if not summarized_activity_by_asset_type_per_week:
+        return
+
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    sorted_week_starts = sorted(all_week_starts)
+    sorted_asset_types = _sort_asset_type_columns(column_names=list(all_asset_types))
+
+    data: dict[str, list] = {"week_start": sorted_week_starts}
+    for asset_type in sorted_asset_types:
+        data[asset_type] = [
+            summarized_activity_by_asset_type_per_week[week].get(asset_type, 0) for week in sorted_week_starts
+        ]
+
+    summary_table = pandas.DataFrame(data=data)
+    summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path) -> None:
+    all_summaries = [
+        pandas.read_table(filepath_or_buffer=summary_file_path)
+        for summary_file_path in summary_directory.rglob(pattern="by_asset_type_per_week.tsv")
+        if summary_file_path.parent.name != "archive"
+    ]
+    if not all_summaries:
+        return
+
+    all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
+    all_summary_data.fillna(value=0, inplace=True)
+    all_summary_data.sort_values(by="week_start", inplace=True)
+
+    asset_type_columns = _sort_asset_type_columns(
+        column_names=[column_name for column_name in all_summary_data.columns if column_name != "week_start"]
+    )
+    if not asset_type_columns:
+        return
+
+    archive_summary = (
+        all_summary_data.groupby(by="week_start", as_index=False)[asset_type_columns].sum().reindex(
+            columns=["week_start", *asset_type_columns]
+        )
+    )
+    archive_summary = archive_summary.astype(dtype={column_name: "int64" for column_name in asset_type_columns})
+    archive_summary.sort_values(by="week_start", inplace=True)
+
+    archive_summary_file_path = summary_directory / "archive" / "by_asset_type_per_week.tsv"
+    archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
 def _summarize_dandiset_by_asset(
