@@ -15,6 +15,9 @@ import tqdm
 from .._parallel._utils import _handle_max_workers
 
 ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Video", "Miscellaneous")
+NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
+MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 
 @pydantic.validate_call
@@ -428,28 +431,13 @@ def _get_asset_type(*, asset_path: str) -> str:
     suffixes = tuple(pathlib.Path(asset_path).suffixes)
     suffix_set = {suffix.lower() for suffix in suffixes}
 
-    if ".nwb" in suffix_set:
+    if suffix_set.intersection(NEUROPHYSIOLOGY_SUFFIXES):
         return "Neurophysiology"
 
-    if (
-        ".nii" in suffix_set
-        or ".ome" in suffix_set
-        or ".tiff" in suffix_set
-        or ".tif" in suffix_set
-        or ".bvecs" in suffix_set
-        or ".bvals" in suffix_set
-        or ".trk" in suffix_set
-        or (".zarr" in suffix_set and len(suffixes) == 1)
-    ):
+    if suffix_set.intersection(MICROSCOPY_SUFFIXES) or (".zarr" in suffix_set and len(suffixes) == 1):
         return "Microscopy"
 
-    if (
-        ".mp4" in suffix_set
-        or ".mov" in suffix_set
-        or ".wmv" in suffix_set
-        or ".avi" in suffix_set
-        or ".mkv" in suffix_set
-    ):
+    if suffix_set.intersection(VIDEO_SUFFIXES):
         return "Video"
 
     return "Miscellaneous"
