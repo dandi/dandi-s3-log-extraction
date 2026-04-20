@@ -478,6 +478,7 @@ def _summarize_dandiset_by_asset_type_per_week(
 
         asset_path = blob_id_to_asset_path.get(blob_id, "undetermined")
         asset_type = _get_asset_type(asset_path=asset_path)
+        all_asset_types.add(asset_type)
 
         timestamps_file_path = blob_directory / "timestamps.txt"
         week_starts = [
@@ -488,10 +489,9 @@ def _summarize_dandiset_by_asset_type_per_week(
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
 
-        for week_start, bs in zip(week_starts, bytes_sent):
-            summarized_activity_by_asset_type_per_week[week_start][asset_type] += bs
+        for week_start, bytes_sent_value in zip(week_starts, bytes_sent):
+            summarized_activity_by_asset_type_per_week[week_start][asset_type] += bytes_sent_value
             all_week_starts.add(week_start)
-            all_asset_types.add(asset_type)
 
     if not summarized_activity_by_asset_type_per_week:
         return
