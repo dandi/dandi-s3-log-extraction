@@ -81,7 +81,7 @@ def generate_dandiset_summaries(
     )
 
     if unassociated:
-        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_unassociated_dandi_asset_info(
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(
             content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
             cache_directory=cache_directory,
         )
@@ -96,7 +96,7 @@ def generate_dandiset_summaries(
             blob_id_to_asset_path=content_id_to_dandiset_path,
         )
     else:
-        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_associated_dandi_asset_info(
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_determinable_dandi_asset_info(
             content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
             cache_directory=cache_directory,
         )
@@ -167,7 +167,7 @@ def generate_dandiset_summaries(
     _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
 
 
-def _get_associated_dandi_asset_info(
+def _get_determinable_dandi_asset_info(
     *,
     content_id_to_usage_dandiset_path_url: str,
     cache_directory: pathlib.Path,
@@ -205,7 +205,7 @@ def _get_associated_dandi_asset_info(
     return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
-def _get_unassociated_dandi_asset_info(
+def _get_undetermined_dandi_asset_info(
     *,
     content_id_to_usage_dandiset_path_url: str,
     cache_directory: pathlib.Path,
