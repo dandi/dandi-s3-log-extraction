@@ -6,6 +6,7 @@ import itertools
 import json
 import pathlib
 
+import natsort
 import pandas
 import pydantic
 import requests
@@ -517,8 +518,6 @@ def _summarize_archive_by_region(*, summary_directory: pathlib.Path) -> None:
 
 
 def _summarize_archive_by_grouped_column(*, summary_directory: pathlib.Path, tsv_name: str, group_column: str) -> None:
-    import natsort
-
     all_summaries = [
         pandas.read_table(filepath_or_buffer=summary_file_path)
         for summary_file_path in summary_directory.rglob(pattern=tsv_name)
