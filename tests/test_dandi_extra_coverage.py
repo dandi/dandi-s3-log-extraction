@@ -22,14 +22,13 @@ from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
 
 @pytest.mark.ai_generated
 def test_handle_max_workers_zero_warns() -> None:
-    """workers=0 raises a warning and falls back to -2."""
+    """workers=0 raises a warning and falls back to -2, returning cpu_count - 1."""
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         result = _handle_max_workers(workers=0)
     assert any("0" in str(w.message) for w in caught)
-    # After fallback to -2, the result is cpu_count - 1 (for cpu_count >= 2)
     cpu_count = os.cpu_count()
-    assert result == (-2) % cpu_count + 1
+    assert result == cpu_count - 1
 
 
 @pytest.mark.ai_generated
@@ -37,7 +36,7 @@ def test_handle_max_workers_negative() -> None:
     """Negative workers value produces cpu-relative result."""
     cpu_count = os.cpu_count()
     result = _handle_max_workers(workers=-2)
-    assert result == (-2) % cpu_count + 1
+    assert result == cpu_count - 1
 
 
 @pytest.mark.ai_generated
