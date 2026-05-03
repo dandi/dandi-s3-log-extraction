@@ -3,6 +3,7 @@ import shutil
 
 import pandas
 import py
+import s3_log_extraction
 
 import dandi_s3_log_extraction
 
