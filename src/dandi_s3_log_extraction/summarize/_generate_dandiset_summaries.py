@@ -227,37 +227,34 @@ def _get_undetermined_dandi_asset_info(
     # The previous loop is 'bottom-up' from provided content ID mappings from the DANDI Cache
     # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
     batch_size = 1_000_000
-    for file_type in ["blobs", "zarr"]:
-        tqdm_iterable = tqdm.tqdm(
-            iterable=itertools.batched(
-                iterable=(extraction_directory / file_type).rglob(pattern="full_ips.txt"), n=batch_size
-            ),
-            total=0,
-            desc="Mapping undetermined blob IDs to local paths",
-            unit="batches",
+    tqdm_iterable = tqdm.tqdm(
+        iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="full_ips.txt"), n=batch_size),
+        total=0,
+        desc="Mapping undetermined blob IDs to local paths",
+        unit="batches",
+        smoothing=0,
+        position=0,
+        leave=True,
+    )
+    for batch in tqdm_iterable:
+        tqdm_iterable.total += 1
+
+        for timestamps_file_path in tqdm.tqdm(
+            iterable=batch,
+            total=len(batch),
+            desc="Processing batch",
+            unit="files",
             smoothing=0,
-            position=0,
-            leave=True,
-        )
-        for batch in tqdm_iterable:
-            tqdm_iterable.total += 1
+            position=1,
+            leave=False,
+        ):
+            local_content_directory = timestamps_file_path.parent
+            content_id = local_content_directory.name
 
-            for timestamps_file_path in tqdm.tqdm(
-                iterable=batch,
-                total=len(batch),
-                desc="Processing batch",
-                unit="files",
-                smoothing=0,
-                position=1,
-                leave=False,
-            ):
-                local_content_directory = timestamps_file_path.parent
-                content_id = local_content_directory.name
+            if content_id in content_id_to_usage_dandiset_path:
+                continue  # This content ID already has a Dandiset association in the usage cache
 
-                if content_id in content_id_to_usage_dandiset_path:
-                    continue  # This content ID already has a Dandiset association in the usage cache
-
-                dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
+            dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
 
     return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
