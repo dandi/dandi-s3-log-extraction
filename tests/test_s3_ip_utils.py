@@ -39,7 +39,7 @@ def test_request_cidr_range_github() -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = fake_response
 
-    with patch("s3_log_extraction.ip_utils._ip_utils.requests.get", return_value=mock_resp):
+    with patch("requests.get", return_value=mock_resp):
         result = _request_cidr_range("GitHub")
 
     assert result == fake_response
@@ -54,7 +54,7 @@ def test_request_cidr_range_aws() -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = fake_response
 
-    with patch("s3_log_extraction.ip_utils._ip_utils.requests.get", return_value=mock_resp):
+    with patch("requests.get", return_value=mock_resp):
         result = _request_cidr_range("AWS")
 
     assert result == fake_response
@@ -69,7 +69,7 @@ def test_request_cidr_range_gcp() -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = fake_response
 
-    with patch("s3_log_extraction.ip_utils._ip_utils.requests.get", return_value=mock_resp):
+    with patch("requests.get", return_value=mock_resp):
         result = _request_cidr_range("GCP")
 
     assert result == fake_response
@@ -84,7 +84,7 @@ def test_request_cidr_range_vpn() -> None:
     mock_resp = MagicMock()
     mock_resp.content = fake_content
 
-    with patch("s3_log_extraction.ip_utils._ip_utils.requests.get", return_value=mock_resp):
+    with patch("requests.get", return_value=mock_resp):
         result = _request_cidr_range("VPN")
 
     assert result == ["1.0.0.0/24", "2.0.0.0/24"]
