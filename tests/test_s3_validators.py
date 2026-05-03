@@ -50,7 +50,8 @@ def test_base_validator_abstract_run_validation_raises(tmp_path: pathlib.Path) -
         BaseValidator._run_validation(validator, file_path=example_file)
 
 
-
+@pytest.mark.ai_generated
+def test_base_validator_hash_fallback(tmp_path: pathlib.Path) -> None:
     """BaseValidator.__hash__ uses _run_validation bytecode checksum."""
     records_dir = tmp_path / "records"
     records_dir.mkdir()

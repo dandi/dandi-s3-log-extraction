@@ -139,7 +139,7 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
     # by_region.tsv with all region types
     region_tsv = pandas.DataFrame(
         {
-            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/us-east-1"],
+            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
         }
     )
@@ -152,7 +152,7 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
     totals = json.loads(output_path.read_text())
     assert "dataset1" in totals
     assert totals["dataset1"]["total_bytes_sent"] == 1500
-    # US/California → country "US", AWS/us-east-1 → country "US"
+    # US/California → country "US", AWS/eu-west-1 → country "EU"
     assert totals["dataset1"]["number_of_unique_countries"] == 2
 
 
@@ -165,7 +165,7 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
 
     region_tsv = pandas.DataFrame(
         {
-            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/us-east-1"],
+            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
         }
     )
@@ -177,5 +177,5 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
     assert output_path.exists()
     result = json.loads(output_path.read_text())
     assert result["total_bytes_sent"] == 1500
-    # US/California → "US", AWS/us-east-1 → "US" (from region_code.split("-")[0].upper())
+    # US/California → "US", AWS/eu-west-1 → "EU" (from region_code.split("-")[0].upper())
     assert result["number_of_unique_countries"] == 2

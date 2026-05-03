@@ -284,7 +284,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
 
     region_tsv = pandas.DataFrame(
         {
-            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/us-east-1"],
+            "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
         }
     )
@@ -295,5 +295,5 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "000001" in totals
     assert totals["000001"]["total_bytes_sent"] == 1500
-    # US/California → "US", AWS/us-east-1 → "US" (via AWS logic)
+    # US/California → "US", AWS/eu-west-1 → "EU" (via AWS logic)
     assert totals["000001"]["number_of_unique_countries"] == 2
