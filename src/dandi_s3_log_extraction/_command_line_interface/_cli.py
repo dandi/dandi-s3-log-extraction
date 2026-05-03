@@ -166,19 +166,9 @@ def _bundle_database_cli() -> None:
     default=-2,
 )
 @rich_click.option(
-    "--content-id-to-unique-dandiset-path-url",
+    "--content-id-to-usage-dandiset-path-url",
     help=(
-        "URL to retrieve the mapping of content IDs to unique Dandiset paths. "
-        "Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository."
-    ),
-    required=False,
-    type=rich_click.STRING,
-    default=None,
-)
-@rich_click.option(
-    "--multiple-paths-same-dandiset-url",
-    help=(
-        "URL to retrieve the mapping of content IDs that have multiple paths within the same Dandiset. "
+        "URL to retrieve the mapping of content IDs to Dandiset paths. "
         "Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository."
     ),
     required=False,
@@ -197,7 +187,7 @@ def _bundle_database_cli() -> None:
 )
 @rich_click.option(
     "--unassociated",
-    help="Whether to generate summaries based on current unassociated status.",
+    help="Whether to generate summaries based on current undetermined status.",
     required=False,
     is_flag=True,
     default=False,
@@ -207,8 +197,7 @@ def _update_summaries_cli(
     pick: str | None = None,
     skip: str | None = None,
     workers: int = -2,
-    content_id_to_unique_dandiset_path_url: str | None = None,
-    multiple_paths_same_dandiset_url: str | None = None,
+    content_id_to_usage_dandiset_path_url: str | None = None,
     api_url: str | None = None,
     unassociated: bool = False,
 ) -> None:
@@ -223,8 +212,7 @@ def _update_summaries_cli(
                 pick=pick_as_list,
                 skip=skip_as_list,
                 workers=workers,
-                content_id_to_unique_dandiset_path_url=content_id_to_unique_dandiset_path_url,
-                multiple_paths_same_dandiset_url=multiple_paths_same_dandiset_url,
+                content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
                 api_url=api_url,
                 unassociated=unassociated,
             )
