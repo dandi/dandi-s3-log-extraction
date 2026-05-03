@@ -6,3 +6,4 @@ Before committing any changes, you MUST:
 - Always mark AI-generated tests with `ai_generated` Pytest marker
 - Run pre-commit
 - Always bump the version in `pyproject.toml` appropriately
+- Leave a short description of the change or addition in the top `# Upcoming` section of the `CHANGELOG.md`
