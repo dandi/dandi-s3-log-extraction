@@ -15,6 +15,9 @@ import dandi_s3_log_extraction.summarize
 from dandi_s3_log_extraction._parallel._utils import _handle_max_workers
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _summarize_archive_by_asset_type_per_week,
+    _summarize_dandiset_by_asset,
+    _summarize_dandiset_by_day,
+    _summarize_dandiset_by_region,
 )
 
 # ─── _handle_max_workers ──────────────────────────────────────────────────────
@@ -293,3 +296,74 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     assert totals["000001"]["total_bytes_sent"] == 1500
     # US/California → "US", AWS/eu-west-1 → "EU" (via AWS logic)
     assert totals["000001"]["number_of_unique_countries"] == 2
+
+
+# ─── number_of_requests column ───────────────────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_by_day_number_of_requests(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_day includes number_of_requests column with correct counts."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    (blob_dir / "timestamps.txt").write_text("200101050635\n200101224258\n200109050635\n")
+    (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
+
+    summary_file_path = tmp_path / "by_day.tsv"
+    _summarize_dandiset_by_day(blob_directories=[blob_dir], summary_file_path=summary_file_path)
+
+    result = pandas.read_table(filepath_or_buffer=summary_file_path)
+    assert "number_of_requests" in result.columns
+    row_2020_01_01 = result[result["date"] == "2020-01-01"].iloc[0]
+    assert row_2020_01_01["bytes_sent"] == 300
+    assert row_2020_01_01["number_of_requests"] == 2
+    row_2020_01_09 = result[result["date"] == "2020-01-09"].iloc[0]
+    assert row_2020_01_09["bytes_sent"] == 300
+    assert row_2020_01_09["number_of_requests"] == 1
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_asset includes number_of_requests column with correct counts."""
+    blob_dir = tmp_path / "blobid1"
+    blob_dir.mkdir()
+    (blob_dir / "bytes_sent.txt").write_text("512\n1024\n256\n")
+
+    blob_id_to_asset_path = {"blobid1": "path/to/asset.nwb"}
+    summary_file_path = tmp_path / "by_asset.tsv"
+    _summarize_dandiset_by_asset(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+        blob_id_to_asset_path=blob_id_to_asset_path,
+    )
+
+    result = pandas.read_table(filepath_or_buffer=summary_file_path)
+    assert "number_of_requests" in result.columns
+    assert result.iloc[0]["bytes_sent"] == 1792
+    assert result.iloc[0]["number_of_requests"] == 3
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_region includes number_of_requests column with correct counts."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    (blob_dir / "indexed_ips.txt").write_text("1\n2\n1\n")
+    (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
+
+    index_to_region = {1: "US/California", 2: "US/New York"}
+    summary_file_path = tmp_path / "by_region.tsv"
+    _summarize_dandiset_by_region(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+        index_to_region=index_to_region,
+    )
+
+    result = pandas.read_table(filepath_or_buffer=summary_file_path)
+    assert "number_of_requests" in result.columns
+    ca_row = result[result["region"] == "US/California"].iloc[0]
+    assert ca_row["bytes_sent"] == 400
+    assert ca_row["number_of_requests"] == 2
+    ny_row = result[result["region"] == "US/New York"].iloc[0]
+    assert ny_row["bytes_sent"] == 200
+    assert ny_row["number_of_requests"] == 1
