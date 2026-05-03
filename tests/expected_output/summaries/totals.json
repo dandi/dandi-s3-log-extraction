@@ -2,36 +2,43 @@
     "000026": {
         "total_bytes_sent": 1536,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 2
     },
     "000109": {
         "total_bytes_sent": 9924461,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 2
     },
     "000142": {
         "total_bytes_sent": 1694552,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 2
     },
     "000293": {
         "total_bytes_sent": 0,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 1
     },
     "000946": {
         "total_bytes_sent": 1526223,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 1
     },
     "001344": {
         "total_bytes_sent": 1443,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 1
     },
     "undetermined": {
         "total_bytes_sent": 0,
         "number_of_unique_regions": 1,
-        "number_of_unique_countries": 0
+        "number_of_unique_countries": 0,
+        "total_number_of_requests": 1
     }
 }

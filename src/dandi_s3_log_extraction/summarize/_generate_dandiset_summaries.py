@@ -6,6 +6,7 @@ import itertools
 import json
 import pathlib
 
+import natsort
 import pandas
 import pydantic
 import requests
@@ -165,6 +166,8 @@ def generate_dandiset_summaries(
                 )
 
     _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
+    _summarize_archive_by_day(summary_directory=summary_directory)
+    _summarize_archive_by_region(summary_directory=summary_directory)
 
 
 def _get_determinable_dandi_asset_info(
@@ -314,17 +317,21 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
         all_bytes_sent.extend(bytes_sent)
 
     summarized_activity_by_day = collections.defaultdict(int)
+    number_of_requests_by_day = collections.defaultdict(int)
     for date, bytes_sent in zip(all_dates, all_bytes_sent):
         summarized_activity_by_day[date] += bytes_sent
+        number_of_requests_by_day[date] += 1
 
     if len(summarized_activity_by_day) == 0:
         return
 
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    all_dates_ordered = list(summarized_activity_by_day.keys())
     summary_table = pandas.DataFrame(
         data={
-            "date": list(summarized_activity_by_day.keys()),
+            "date": all_dates_ordered,
             "bytes_sent": list(summarized_activity_by_day.values()),
+            "number_of_requests": [number_of_requests_by_day[date] for date in all_dates_ordered],
         }
     )
     summary_table.sort_values(by="date", inplace=True)
@@ -494,10 +501,51 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
     archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
+def _summarize_archive_by_day(*, summary_directory: pathlib.Path) -> None:
+    _summarize_archive_by_grouped_column(
+        summary_directory=summary_directory,
+        tsv_name="by_day.tsv",
+        group_column="date",
+    )
+
+
+def _summarize_archive_by_region(*, summary_directory: pathlib.Path) -> None:
+    _summarize_archive_by_grouped_column(
+        summary_directory=summary_directory,
+        tsv_name="by_region.tsv",
+        group_column="region",
+    )
+
+
+def _summarize_archive_by_grouped_column(*, summary_directory: pathlib.Path, tsv_name: str, group_column: str) -> None:
+    all_summaries = [
+        pandas.read_table(filepath_or_buffer=summary_file_path)
+        for summary_file_path in summary_directory.rglob(pattern=tsv_name)
+        if summary_file_path.parent.name != "archive"
+    ]
+    if not all_summaries:
+        return
+
+    all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
+
+    archive_summary = (
+        all_summary_data.groupby(by=group_column, as_index=False)[["bytes_sent", "number_of_requests"]]
+        .sum()
+        .reindex(columns=[group_column, "bytes_sent", "number_of_requests"])
+    )
+    archive_summary = archive_summary.astype(dtype={"bytes_sent": "int64", "number_of_requests": "int64"})
+    archive_summary.sort_values(by=group_column, key=natsort.natsort_keygen(), inplace=True)
+
+    archive_summary_file_path = summary_directory / "archive" / tsv_name
+    archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
 def _summarize_dandiset_by_asset(
     *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
+    number_of_requests_by_asset = collections.defaultdict(int)
     for blob_directory in blob_directories:
         blob_id = blob_directory.name
 
@@ -513,15 +561,18 @@ def _summarize_dandiset_by_asset(
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
 
         summarized_activity_by_asset[asset_path] += sum(bytes_sent)
+        number_of_requests_by_asset[asset_path] += len(bytes_sent)
 
     if len(summarized_activity_by_asset) == 0:
         return
 
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    all_asset_paths = list(summarized_activity_by_asset.keys())
     summary_table = pandas.DataFrame(
         data={
-            "asset_path": list(summarized_activity_by_asset.keys()),
+            "asset_path": all_asset_paths,
             "bytes_sent": list(summarized_activity_by_asset.values()),
+            "number_of_requests": [number_of_requests_by_asset[path] for path in all_asset_paths],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
@@ -549,17 +600,21 @@ def _summarize_dandiset_by_region(
         all_bytes_sent.extend(bytes_sent)
 
     summarized_activity_by_region = collections.defaultdict(int)
+    number_of_requests_by_region = collections.defaultdict(int)
     for region, bytes_sent in zip(all_regions, all_bytes_sent):
         summarized_activity_by_region[region] += bytes_sent
+        number_of_requests_by_region[region] += 1
 
     if len(summarized_activity_by_region) == 0:
         return
 
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    all_regions_ordered = list(summarized_activity_by_region.keys())
     summary_table = pandas.DataFrame(
         data={
-            "region": list(summarized_activity_by_region.keys()),
+            "region": all_regions_ordered,
             "bytes_sent": list(summarized_activity_by_region.values()),
+            "number_of_requests": [number_of_requests_by_region[region] for region in all_regions_ordered],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)

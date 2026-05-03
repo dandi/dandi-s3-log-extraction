@@ -1,2 +1,2 @@
-region	bytes_sent
-unknown	0
+region	bytes_sent	number_of_requests
+unknown	0	1

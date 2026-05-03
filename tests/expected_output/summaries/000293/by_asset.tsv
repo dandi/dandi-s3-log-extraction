@@ -1,2 +1,2 @@
-asset_path	bytes_sent
-sub-X2020-03-02-2020-03-02-0023/sub-X2020-03-02-2020-03-02-0023_icephys.nwb	0
+asset_path	bytes_sent	number_of_requests
+sub-X2020-03-02-2020-03-02-0023/sub-X2020-03-02-2020-03-02-0023_icephys.nwb	0	1

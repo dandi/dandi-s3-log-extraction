@@ -27,7 +27,6 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         cache_directory=test_dir, workers=1, unassociated=True
     )
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=test_summary_dir)
-    s3_log_extraction.summarize.generate_archive_summaries(summary_directory=test_summary_dir)
 
     test_file_paths = {path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="*.tsv")}
     expected_file_paths = {
