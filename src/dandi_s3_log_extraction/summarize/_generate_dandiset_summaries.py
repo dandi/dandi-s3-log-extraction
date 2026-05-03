@@ -165,6 +165,8 @@ def generate_dandiset_summaries(
                 )
 
     _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
+    _summarize_archive_by_day(summary_directory=summary_directory)
+    _summarize_archive_by_region(summary_directory=summary_directory)
 
 
 def _get_determinable_dandi_asset_info(
@@ -494,6 +496,58 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
     archive_summary.sort_values(by="week_start", inplace=True)
 
     archive_summary_file_path = summary_directory / "archive" / "by_asset_type_per_week.tsv"
+    archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _summarize_archive_by_day(*, summary_directory: pathlib.Path) -> None:
+    import natsort
+
+    all_summaries = [
+        pandas.read_table(filepath_or_buffer=summary_file_path)
+        for summary_file_path in summary_directory.rglob(pattern="by_day.tsv")
+        if summary_file_path.parent.name != "archive"
+    ]
+    if not all_summaries:
+        return
+
+    all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
+
+    archive_summary = (
+        all_summary_data.groupby(by="date", as_index=False)[["bytes_sent", "number_of_requests"]]
+        .sum()
+        .reindex(columns=["date", "bytes_sent", "number_of_requests"])
+    )
+    archive_summary = archive_summary.astype(dtype={"bytes_sent": "int64", "number_of_requests": "int64"})
+    archive_summary.sort_values(by="date", key=natsort.natsort_keygen(), inplace=True)
+
+    archive_summary_file_path = summary_directory / "archive" / "by_day.tsv"
+    archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _summarize_archive_by_region(*, summary_directory: pathlib.Path) -> None:
+    import natsort
+
+    all_summaries = [
+        pandas.read_table(filepath_or_buffer=summary_file_path)
+        for summary_file_path in summary_directory.rglob(pattern="by_region.tsv")
+        if summary_file_path.parent.name != "archive"
+    ]
+    if not all_summaries:
+        return
+
+    all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
+
+    archive_summary = (
+        all_summary_data.groupby(by="region", as_index=False)[["bytes_sent", "number_of_requests"]]
+        .sum()
+        .reindex(columns=["region", "bytes_sent", "number_of_requests"])
+    )
+    archive_summary = archive_summary.astype(dtype={"bytes_sent": "int64", "number_of_requests": "int64"})
+    archive_summary.sort_values(by="region", key=natsort.natsort_keygen(), inplace=True)
+
+    archive_summary_file_path = summary_directory / "archive" / "by_region.tsv"
     archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
 

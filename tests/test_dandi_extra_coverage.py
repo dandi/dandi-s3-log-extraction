@@ -260,7 +260,7 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     # A valid dandiset directory with data
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir()
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100]})
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
@@ -268,6 +268,7 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "000001" in totals
     assert "some_file" not in totals
+    assert totals["000001"]["total_number_of_requests"] == 3
 
 
 @pytest.mark.ai_generated
@@ -285,6 +286,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
         {
             "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
+            "number_of_requests": [1, 2, 3, 4, 5],
         }
     )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
@@ -296,6 +298,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     assert totals["000001"]["total_bytes_sent"] == 1500
     # US/California → "US", AWS/eu-west-1 → "EU" (via AWS logic)
     assert totals["000001"]["number_of_unique_countries"] == 2
+    assert totals["000001"]["total_number_of_requests"] == 15
 
 
 # ─── number_of_requests column ───────────────────────────────────────────────
