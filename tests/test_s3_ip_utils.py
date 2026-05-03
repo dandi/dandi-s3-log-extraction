@@ -364,9 +364,7 @@ def test_update_region_code_coordinates_full_mock(tmp_path: pathlib.Path) -> Non
     ip_cache_dir.mkdir(parents=True)
 
     # Create index_to_region.yaml with several region types
-    (ip_cache_dir / "index_to_region.yaml").write_text(
-        "1: 'US/California'\n2: 'AWS/us-east-1'\n3: 'bogon'\n"
-    )
+    (ip_cache_dir / "index_to_region.yaml").write_text("1: 'US/California'\n2: 'AWS/us-east-1'\n3: 'bogon'\n")
 
     mock_ipinfo_client = MagicMock()
     mock_opencage_client = MagicMock()

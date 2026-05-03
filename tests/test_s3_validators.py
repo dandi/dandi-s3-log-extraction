@@ -16,8 +16,8 @@ from s3_log_extraction.validate import (
 _VALID_LOG_LINE = (
     "8787a3c41bf7ce0d54359d9348ad5b08e16bd5bb8ae5aa4e1508b435773a066e"
     " dandiarchive [01/Jan/2020:05:06:35 +0000] 192.0.2.0 - J42N2W7ET0EC03CV"
-    " REST.PUT.OBJECT blobs/100/4eb/1004eb73 \"PUT /blobs/100 HTTP/1.1\""
-    " 200 - 512 512 53 52 \"-\" \"-\" - sig - AES256"
+    ' REST.PUT.OBJECT blobs/100/4eb/1004eb73 "PUT /blobs/100 HTTP/1.1"'
+    ' 200 - 512 512 53 52 "-" "-" - sig - AES256'
     " - bucket.s3.amazonaws.com TLSv1.2 - -"
 )
 

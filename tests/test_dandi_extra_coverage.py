@@ -139,9 +139,7 @@ def test_generate_dandiset_summaries_pick_branch(tmp_path: pathlib.Path) -> None
             return_value=_make_fake_gz_response({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient") as mock_client_cls,
-        patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"
-        ),
+        patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"),
         patch(
             "dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_archive_by_asset_type_per_week"
         ),
@@ -170,9 +168,7 @@ def test_generate_dandiset_summaries_skip_branch(tmp_path: pathlib.Path) -> None
             return_value=_make_fake_gz_response({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient", return_value=mock_client),
-        patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"
-        ),
+        patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"),
         patch(
             "dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_archive_by_asset_type_per_week"
         ),
