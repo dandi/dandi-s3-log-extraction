@@ -273,7 +273,7 @@ def test_update_totals_archive_mode() -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["update", "totals", "--mode", "archive"])
 
         assert result.exit_code == 0, result.output
-        mock_s3.summarize.generate_archive_totals.assert_called_once_with()
+        mock_s3.summarize.generate_archive_totals.assert_called_once_with(None)
 
 
 @pytest.mark.ai_generated
