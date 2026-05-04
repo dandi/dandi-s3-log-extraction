@@ -6,6 +6,9 @@
 
 Added `--inventory` CLI flag to `dandis3logextraction extract --mode remote`, exposing the upstream `inventory_directory` parameter on `DandiRemoteS3LogAccessExtractor.extract_s3_bucket`. When provided, unprocessed log files are discovered from a pre-downloaded local AWS S3 Inventory directory instead of performing live `s5cmd ls` calls against the bucket.
 
+Added `--summary-directory` CLI option to both `dandis3logextraction update summaries` and `dandis3logextraction update totals`, allowing users to specify a custom output directory for summaries instead of always using the default path from configuration.
+Also exposed `summary_directory` as a direct parameter on the `generate_dandiset_summaries` Python API.
+
 # v0.0.5
 
 ## Improvements
