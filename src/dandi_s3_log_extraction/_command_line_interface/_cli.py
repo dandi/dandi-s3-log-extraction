@@ -51,26 +51,13 @@ def _dandis3logextraction_cli():
     default=None,
 )
 @rich_click.option(
-    "--manifest",
-    "manifest_file_path",
-    help=(
-        "A custom manifest file specifying the paths of log files to process from the S3 bucket that would not be "
-        "discovered by the natural nesting pattern. Typically used in cases where the storage pattern was swapped "
-        "from flat to nested at a particular point in time."
-    ),
-    required=False,
-    type=rich_click.Path(writable=False),
-    default=None,
-)
-@rich_click.option(
     "--inventory",
     "inventory_directory",
     help=(
         "Path to a local pre-downloaded AWS S3 Inventory directory. "
         "The directory must contain a 'hive/' sub-folder with Hive-partitioned symlink files "
-        "(e.g. hive/dt=YYYY-MM-DD-HH-MM/symlink.txt), a 'data/' sub-folder with the "
-        "gzip-compressed CSV inventory files, and timestamped manifest directories "
-        "(e.g. 2026-05-03T01-00Z/manifest.json). "
+        "(e.g. hive/dt=YYYY-MM-DD-HH-MM/symlink.txt) and a 'data/' sub-folder with the "
+        "gzip-compressed CSV inventory files. "
         "The most recent hive partition is used to discover all log files in the bucket, "
         "replacing live s5cmd ls calls."
     ),
@@ -83,7 +70,6 @@ def _extract_cli(
     limit: int | None = None,
     workers: int = -2,
     mode: typing.Literal["remote"] | None = None,
-    manifest_file_path: str | None = None,
     inventory_directory: str | None = None,
 ) -> None:
     """
@@ -101,7 +87,6 @@ def _extract_cli(
                 s3_root=directory,
                 limit=limit,
                 workers=workers,
-                manifest_file_path=manifest_file_path,
                 inventory_directory=inventory_directory,
             )
         case _:
