@@ -277,6 +277,20 @@ def test_update_totals_archive_mode() -> None:
 
 
 @pytest.mark.ai_generated
+def test_update_totals_archive_mode_with_directory(tmp_path: pathlib.Path) -> None:
+    """Test update totals --mode archive --directory passes derived summary_directory to generate_archive_totals."""
+    runner = CliRunner()
+    with patch("dandi_s3_log_extraction._command_line_interface._cli.s3_log_extraction") as mock_s3:
+        result = runner.invoke(
+            _dandis3logextraction_cli,
+            ["update", "totals", "--mode", "archive", "--directory", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_s3.summarize.generate_archive_totals.assert_called_once_with(tmp_path / "summaries")
+
+
+@pytest.mark.ai_generated
 def test_update_summaries_with_directory(tmp_path: pathlib.Path) -> None:
     """Test update summaries passes --directory to generate_dandiset_summaries as cache_directory."""
     runner = CliRunner()
