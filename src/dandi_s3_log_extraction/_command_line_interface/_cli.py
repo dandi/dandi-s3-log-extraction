@@ -1,6 +1,7 @@
 """Call the DANDI S3 log extraction tool from the command line."""
 
 import os
+import pathlib
 import typing
 
 import rich_click
@@ -210,6 +211,17 @@ def _bundle_database_cli() -> None:
     is_flag=True,
     default=False,
 )
+@rich_click.option(
+    "--directory",
+    "cache_directory",
+    help=(
+        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
+        "If not provided, the default cache directory from the configuration will be used."
+    ),
+    required=False,
+    type=rich_click.Path(file_okay=False, dir_okay=True),
+    default=None,
+)
 def _update_summaries_cli(
     mode: typing.Literal["dandi", "archive"] | None = None,
     pick: str | None = None,
@@ -218,6 +230,7 @@ def _update_summaries_cli(
     content_id_to_usage_dandiset_path_url: str | None = None,
     api_url: str | None = None,
     unassociated: bool = False,
+    cache_directory: str | None = None,
 ) -> None:
     """Generate condensed summaries of activity."""
     match mode:
@@ -233,6 +246,7 @@ def _update_summaries_cli(
                 content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
                 api_url=api_url,
                 unassociated=unassociated,
+                cache_directory=cache_directory,
             )
 
 
@@ -248,10 +262,25 @@ def _update_summaries_cli(
     type=rich_click.Choice(choices=["dandi", "archive"]),
     default=None,
 )
-def _update_totals_cli(mode: typing.Literal["dandi", "archive"] | None = None) -> None:
+@rich_click.option(
+    "--directory",
+    "cache_directory",
+    help=(
+        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
+        "If not provided, the default cache directory from the configuration will be used."
+    ),
+    required=False,
+    type=rich_click.Path(file_okay=False, dir_okay=True),
+    default=None,
+)
+def _update_totals_cli(
+    mode: typing.Literal["dandi", "archive"] | None = None,
+    cache_directory: str | None = None,
+) -> None:
     """Generate grand totals of all extracted data."""
+    summary_directory = pathlib.Path(cache_directory) / "summaries" if cache_directory is not None else None
     match mode:
         case "archive":
-            s3_log_extraction.summarize.generate_archive_totals()
+            s3_log_extraction.summarize.generate_archive_totals(summary_directory)
         case _:
-            generate_dandiset_totals()
+            generate_dandiset_totals(summary_directory=summary_directory)
