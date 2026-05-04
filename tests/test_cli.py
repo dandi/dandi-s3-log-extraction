@@ -39,7 +39,7 @@ def test_extract_remote_mode(tmp_path: pathlib.Path) -> None:
 
         assert result.exit_code == 0, result.output
         mock_extractor.extract_s3_bucket.assert_called_once_with(
-            s3_root=str(tmp_path), limit=None, workers=-2, manifest_file_path=None
+            s3_root=str(tmp_path), limit=None, workers=-2, manifest_file_path=None, inventory_directory=None
         )
 
 
@@ -109,7 +109,34 @@ def test_extract_remote_with_manifest(tmp_path: pathlib.Path) -> None:
 
         assert result.exit_code == 0, result.output
         mock_extractor.extract_s3_bucket.assert_called_once_with(
-            s3_root=str(tmp_path), limit=None, workers=-2, manifest_file_path=manifest_path
+            s3_root=str(tmp_path), limit=None, workers=-2, manifest_file_path=manifest_path, inventory_directory=None
+        )
+
+
+@pytest.mark.ai_generated
+def test_extract_remote_with_inventory(tmp_path: pathlib.Path) -> None:
+    """Test extract command with --mode remote and --inventory passes inventory_directory."""
+    runner = CliRunner()
+    inventory_dir = tmp_path / "inventory"
+    inventory_dir.mkdir()
+    with patch(
+        "dandi_s3_log_extraction._command_line_interface._cli.DandiRemoteS3LogAccessExtractor"
+    ) as mock_extractor_class:
+        mock_extractor = MagicMock()
+        mock_extractor_class.return_value = mock_extractor
+
+        result = runner.invoke(
+            _dandis3logextraction_cli,
+            ["extract", str(tmp_path), "--mode", "remote", "--inventory", str(inventory_dir)],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_extractor.extract_s3_bucket.assert_called_once_with(
+            s3_root=str(tmp_path),
+            limit=None,
+            workers=-2,
+            manifest_file_path=None,
+            inventory_directory=str(inventory_dir),
         )
 
 
