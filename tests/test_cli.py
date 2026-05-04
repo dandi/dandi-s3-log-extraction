@@ -188,7 +188,7 @@ def test_update_summaries_default_mode() -> None:
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
-            summary_directory=None,
+            cache_directory=None,
         )
 
 
@@ -218,7 +218,7 @@ def test_update_summaries_with_pick_and_skip() -> None:
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
-            summary_directory=None,
+            cache_directory=None,
         )
 
 
@@ -250,7 +250,7 @@ def test_update_summaries_with_all_options() -> None:
             content_id_to_usage_dandiset_path_url="https://example.com",
             api_url="https://api.example.com",
             unassociated=True,
-            summary_directory=None,
+            cache_directory=None,
         )
 
 
@@ -277,13 +277,13 @@ def test_update_totals_archive_mode() -> None:
 
 
 @pytest.mark.ai_generated
-def test_update_summaries_with_summary_directory(tmp_path: pathlib.Path) -> None:
-    """Test update summaries passes --summary-directory to generate_dandiset_summaries."""
+def test_update_summaries_with_directory(tmp_path: pathlib.Path) -> None:
+    """Test update summaries passes --directory to generate_dandiset_summaries as cache_directory."""
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_summaries") as mock_gen:
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["update", "summaries", "--summary-directory", str(tmp_path)],
+            ["update", "summaries", "--directory", str(tmp_path)],
         )
 
         assert result.exit_code == 0, result.output
@@ -294,18 +294,18 @@ def test_update_summaries_with_summary_directory(tmp_path: pathlib.Path) -> None
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
-            summary_directory=str(tmp_path),
+            cache_directory=str(tmp_path),
         )
 
 
 @pytest.mark.ai_generated
-def test_update_totals_with_summary_directory(tmp_path: pathlib.Path) -> None:
-    """Test update totals passes --summary-directory to generate_dandiset_totals."""
+def test_update_totals_with_directory(tmp_path: pathlib.Path) -> None:
+    """Test update totals passes --directory to generate_dandiset_totals as summary_directory."""
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_totals") as mock_totals:
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["update", "totals", "--summary-directory", str(tmp_path)],
+            ["update", "totals", "--directory", str(tmp_path)],
         )
 
         assert result.exit_code == 0, result.output

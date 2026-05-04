@@ -211,11 +211,11 @@ def _bundle_database_cli() -> None:
     default=False,
 )
 @rich_click.option(
-    "--summary-directory",
-    "summary_directory",
+    "--directory",
+    "cache_directory",
     help=(
-        "Path to the folder where summaries will be written. "
-        "If not provided, defaults to a 'summaries' subdirectory inside the cache directory."
+        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
+        "If not provided, the default cache directory from the configuration will be used."
     ),
     required=False,
     type=rich_click.Path(file_okay=False, dir_okay=True),
@@ -229,7 +229,7 @@ def _update_summaries_cli(
     content_id_to_usage_dandiset_path_url: str | None = None,
     api_url: str | None = None,
     unassociated: bool = False,
-    summary_directory: str | None = None,
+    cache_directory: str | None = None,
 ) -> None:
     """Generate condensed summaries of activity."""
     match mode:
@@ -245,7 +245,7 @@ def _update_summaries_cli(
                 content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
                 api_url=api_url,
                 unassociated=unassociated,
-                summary_directory=summary_directory,
+                cache_directory=cache_directory,
             )
 
 
@@ -262,10 +262,10 @@ def _update_summaries_cli(
     default=None,
 )
 @rich_click.option(
-    "--summary-directory",
+    "--directory",
     "summary_directory",
     help=(
-        "Path to the folder containing previously generated summaries. "
+        "Path to the folder containing previously generated summaries (`summary_directory`). "
         "If not provided, the default summary directory from the configuration will be used."
     ),
     required=False,

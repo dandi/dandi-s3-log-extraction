@@ -25,7 +25,6 @@ VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 def generate_dandiset_summaries(
     *,
     cache_directory: str | pathlib.Path | None = None,
-    summary_directory: str | pathlib.Path | None = None,
     pick: list[str] | None = None,
     skip: list[str] | None = None,
     workers: int = -2,
@@ -41,9 +40,6 @@ def generate_dandiset_summaries(
     cache_directory : pathlib.Path
         Path to the folder containing all previously extracted S3 access logs.
         If `None`, the default extraction directory from the configuration will be used.
-    summary_directory : pathlib.Path, optional
-        Path to the folder where summaries will be written.
-        If `None`, defaults to a 'summaries' subdirectory inside `cache_directory`.
     workers : int
         Number of workers to use for parallel processing.
         If -1, use all available cores. If -2, use all cores minus one.
@@ -68,10 +64,7 @@ def generate_dandiset_summaries(
         pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
     )
 
-    if summary_directory is not None:
-        summary_directory = pathlib.Path(summary_directory)
-    else:
-        summary_directory = cache_directory / "summaries"
+    summary_directory = cache_directory / "summaries"
     summary_directory.mkdir(exist_ok=True)
 
     if pick is not None and skip is not None:
