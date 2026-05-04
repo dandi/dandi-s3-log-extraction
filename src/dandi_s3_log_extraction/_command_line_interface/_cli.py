@@ -1,6 +1,7 @@
 """Call the DANDI S3 log extraction tool from the command line."""
 
 import os
+import pathlib
 import typing
 
 import rich_click
