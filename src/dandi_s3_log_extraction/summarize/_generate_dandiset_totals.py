@@ -8,19 +8,19 @@ import s3_log_extraction
 
 # TODO: can likely be replaced by the generic version
 @pydantic.validate_call
-def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) -> None:
+def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None) -> None:
     """
     Generate top-level totals of summarized access activity for all Dandisets.
 
     Parameters
     ----------
-    cache_directory : pathlib.Path
-        Path to the folder containing all previously extracted S3 access logs.
-        If `None`, the default extraction directory from the configuration will be used.
+    summary_directory : pathlib.Path
+        Path to the folder containing all previously generated summaries of the S3 access logs.
+        If `None`, the default summary directory from the configuration will be used.
     """
     summary_directory = (
-        pathlib.Path(cache_directory) / "summaries"
-        if cache_directory is not None
+        pathlib.Path(summary_directory)
+        if summary_directory is not None
         else s3_log_extraction.config.get_summary_directory()
     )
 

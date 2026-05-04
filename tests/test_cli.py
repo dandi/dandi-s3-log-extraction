@@ -262,7 +262,7 @@ def test_update_totals_default_mode() -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["update", "totals"])
 
         assert result.exit_code == 0, result.output
-        mock_totals.assert_called_once_with(cache_directory=None)
+        mock_totals.assert_called_once_with(summary_directory=None)
 
 
 @pytest.mark.ai_generated
@@ -300,7 +300,7 @@ def test_update_summaries_with_directory(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_update_totals_with_directory(tmp_path: pathlib.Path) -> None:
-    """Test update totals passes --directory to generate_dandiset_totals as cache_directory."""
+    """Test update totals --directory derives summary_directory = cache_directory / 'summaries'."""
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_totals") as mock_totals:
         result = runner.invoke(
@@ -309,4 +309,4 @@ def test_update_totals_with_directory(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
-        mock_totals.assert_called_once_with(cache_directory=str(tmp_path))
+        mock_totals.assert_called_once_with(summary_directory=tmp_path / "summaries")
