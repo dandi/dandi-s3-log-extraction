@@ -263,10 +263,10 @@ def _update_summaries_cli(
 )
 @rich_click.option(
     "--directory",
-    "summary_directory",
+    "cache_directory",
     help=(
-        "Path to the folder containing previously generated summaries (`summary_directory`). "
-        "If not provided, the default summary directory from the configuration will be used."
+        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
+        "If not provided, the default cache directory from the configuration will be used."
     ),
     required=False,
     type=rich_click.Path(file_okay=False, dir_okay=True),
@@ -274,11 +274,11 @@ def _update_summaries_cli(
 )
 def _update_totals_cli(
     mode: typing.Literal["dandi", "archive"] | None = None,
-    summary_directory: str | None = None,
+    cache_directory: str | None = None,
 ) -> None:
     """Generate grand totals of all extracted data."""
     match mode:
         case "archive":
             s3_log_extraction.summarize.generate_archive_totals()
         case _:
-            generate_dandiset_totals(summary_directory=summary_directory)
+            generate_dandiset_totals(cache_directory=cache_directory)
