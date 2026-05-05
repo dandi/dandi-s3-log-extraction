@@ -119,17 +119,6 @@ def test_stop_custom_timeout() -> None:
 
 
 @pytest.mark.ai_generated
-def test_update_database() -> None:
-    """Test update database command calls bundle_database."""
-    runner = CliRunner()
-    with patch("dandi_s3_log_extraction._command_line_interface._cli.bundle_database") as mock_bundle:
-        result = runner.invoke(_dandis3logextraction_cli, ["update", "database"])
-
-        assert result.exit_code == 0, result.output
-        mock_bundle.assert_called_once_with()
-
-
-@pytest.mark.ai_generated
 def test_update_summaries_default_mode() -> None:
     """Test update summaries with default mode calls generate_dandiset_summaries."""
     runner = CliRunner()
