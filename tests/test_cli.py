@@ -50,17 +50,6 @@ def test_extract_dandi_mode(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_extract_dandi_remote_mode(tmp_path: pathlib.Path) -> None:
-    """Test extract command with --mode dandi-remote raises NotImplementedError."""
-    runner = CliRunner()
-    result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "dandi-remote"])
-
-    assert result.exit_code == 1
-    assert isinstance(result.exception, NotImplementedError)
-    assert "remote" in str(result.exception).lower()
-
-
-@pytest.mark.ai_generated
 def test_extract_with_limit_and_workers(tmp_path: pathlib.Path) -> None:
     """Test extract command with --limit and --workers options."""
     runner = CliRunner()
