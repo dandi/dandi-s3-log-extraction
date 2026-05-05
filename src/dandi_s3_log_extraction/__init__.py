@@ -19,7 +19,6 @@ versions and current drafts, which only comprise around 100 MB of the original d
 
 __all__ = [
     # Public submodules
-    "database",
     "extractors",
     "summarize",
 ]
