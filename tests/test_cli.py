@@ -11,18 +11,13 @@ from dandi_s3_log_extraction._command_line_interface._cli import _dandis3logextr
 
 @pytest.mark.ai_generated
 def test_extract_default_mode(tmp_path: pathlib.Path) -> None:
-    """Test extract command with default mode calls DandiS3LogAccessExtractor.extract_directory."""
+    """Test extract command with default mode raises NotImplementedError."""
     runner = CliRunner()
-    with patch(
-        "dandi_s3_log_extraction._command_line_interface._cli.DandiS3LogAccessExtractor"
-    ) as mock_extractor_class:
-        mock_extractor = MagicMock()
-        mock_extractor_class.return_value = mock_extractor
+    result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path)])
 
-        result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path)])
-
-        assert result.exit_code == 0, result.output
-        mock_extractor.extract_directory.assert_called_once_with(directory=str(tmp_path), limit=None, workers=-2)
+    assert result.exit_code == 1
+    assert isinstance(result.exception, NotImplementedError)
+    assert "remote" in str(result.exception).lower()
 
 
 @pytest.mark.ai_generated
@@ -45,34 +40,13 @@ def test_extract_remote_mode(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_extract_dandi_mode(tmp_path: pathlib.Path) -> None:
-    """Test extract command with --mode dandi calls DandiS3LogAccessExtractor.extract_directory."""
+    """Test extract command with --mode dandi raises NotImplementedError."""
     runner = CliRunner()
-    with patch(
-        "dandi_s3_log_extraction._command_line_interface._cli.DandiS3LogAccessExtractor"
-    ) as mock_extractor_class:
-        mock_extractor = MagicMock()
-        mock_extractor_class.return_value = mock_extractor
+    result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "dandi"])
 
-        result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "dandi"])
-
-        assert result.exit_code == 0, result.output
-        mock_extractor.extract_directory.assert_called_once_with(directory=str(tmp_path), limit=None, workers=-2)
-
-
-@pytest.mark.ai_generated
-def test_extract_dandi_remote_mode(tmp_path: pathlib.Path) -> None:
-    """Test extract command with --mode dandi-remote calls DandiS3LogAccessExtractor.extract_directory."""
-    runner = CliRunner()
-    with patch(
-        "dandi_s3_log_extraction._command_line_interface._cli.DandiS3LogAccessExtractor"
-    ) as mock_extractor_class:
-        mock_extractor = MagicMock()
-        mock_extractor_class.return_value = mock_extractor
-
-        result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "dandi-remote"])
-
-        assert result.exit_code == 0, result.output
-        mock_extractor.extract_directory.assert_called_once_with(directory=str(tmp_path), limit=None, workers=-2)
+    assert result.exit_code == 1
+    assert isinstance(result.exception, NotImplementedError)
+    assert "remote" in str(result.exception).lower()
 
 
 @pytest.mark.ai_generated
@@ -80,15 +54,20 @@ def test_extract_with_limit_and_workers(tmp_path: pathlib.Path) -> None:
     """Test extract command with --limit and --workers options."""
     runner = CliRunner()
     with patch(
-        "dandi_s3_log_extraction._command_line_interface._cli.DandiS3LogAccessExtractor"
+        "dandi_s3_log_extraction._command_line_interface._cli.DandiRemoteS3LogAccessExtractor"
     ) as mock_extractor_class:
         mock_extractor = MagicMock()
         mock_extractor_class.return_value = mock_extractor
 
-        result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--limit", "5", "--workers", "2"])
+        result = runner.invoke(
+            _dandis3logextraction_cli,
+            ["extract", str(tmp_path), "--mode", "remote", "--limit", "5", "--workers", "2"],
+        )
 
         assert result.exit_code == 0, result.output
-        mock_extractor.extract_directory.assert_called_once_with(directory=str(tmp_path), limit=5, workers=2)
+        mock_extractor.extract_s3_bucket.assert_called_once_with(
+            s3_root=str(tmp_path), limit=5, workers=2, inventory_directory=None
+        )
 
 
 @pytest.mark.ai_generated
