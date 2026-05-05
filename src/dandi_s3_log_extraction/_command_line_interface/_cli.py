@@ -8,7 +8,7 @@ import rich_click
 import s3_log_extraction
 
 from ..database import bundle_database
-from ..extractors import DandiRemoteS3LogAccessExtractor, DandiS3LogAccessExtractor
+from ..extractors import DandiRemoteS3LogAccessExtractor
 from ..summarize import generate_dandiset_summaries, generate_dandiset_totals
 
 
@@ -89,9 +89,15 @@ def _extract_cli(
                 workers=workers,
                 inventory_directory=inventory_directory,
             )
+        case "dandi" | "dandi-remote":
+            raise NotImplementedError(
+                "The local DANDI S3 log extractor is not supported by this package. "
+                "Please use '--mode remote' instead."
+            )
         case _:
-            extractor = DandiS3LogAccessExtractor()
-            extractor.extract_directory(directory=directory, limit=limit, workers=workers)
+            raise NotImplementedError(
+                "Only remote extraction is supported by this package. Please use '--mode remote'."
+            )
 
 
 # dandis3logextraction stop
