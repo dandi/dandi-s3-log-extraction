@@ -168,6 +168,7 @@ def generate_dandiset_summaries(
     _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
     _summarize_archive_by_day(summary_directory=summary_directory)
     _summarize_archive_by_region(summary_directory=summary_directory)
+    _summarize_archive_unique_requester_count(summary_directory=summary_directory)
 
 
 def _get_determinable_dandi_asset_info(
@@ -292,6 +293,10 @@ def _summarize_dandiset(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
         index_to_region=index_to_region,
+    )
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=blob_directories,
+        summary_file_path=summary_directory / dandiset_id / "unique_requester_count.txt",
     )
 
 
@@ -618,3 +623,58 @@ def _summarize_dandiset_by_region(
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _summarize_dandiset_unique_requester_count(
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path
+) -> None:
+    """
+    Count unique requesters (unique IP indices) across all blobs for a Dandiset.
+
+    The raw count is written to a text file for later use in generating totals with
+    privacy-safe rounding applied.
+    """
+    all_ip_indices: set[int] = set()
+    for blob_directory in blob_directories:
+        if not blob_directory.exists():
+            continue
+
+        indexed_ips_file_path = blob_directory / "indexed_ips.txt"
+        if not indexed_ips_file_path.exists():
+            continue
+
+        indexed_ips = [int(ip_index.strip()) for ip_index in indexed_ips_file_path.read_text().splitlines()]
+        all_ip_indices.update(indexed_ips)
+
+    if not all_ip_indices:
+        return
+
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_file_path.write_text(str(len(all_ip_indices)))
+
+
+def _summarize_archive_unique_requester_count(*, summary_directory: pathlib.Path) -> None:
+    """
+    Aggregate unique requester counts across all Dandisets for an archive-level total.
+
+    Sums the per-Dandiset raw requester counts. Note: this is an upper bound on the
+    true archive-wide unique requester count, since the same requester may appear in
+    multiple Dandisets.
+    """
+    total_unique_requester_count = 0
+    for dandiset_dir in summary_directory.iterdir():
+        if not dandiset_dir.is_dir() or dandiset_dir.name == "archive":
+            continue
+
+        count_file = dandiset_dir / "unique_requester_count.txt"
+        if not count_file.exists():
+            continue
+
+        total_unique_requester_count += int(count_file.read_text().strip())
+
+    if total_unique_requester_count == 0:
+        return
+
+    archive_dir = summary_directory / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    (archive_dir / "unique_requester_count.txt").write_text(str(total_unique_requester_count))

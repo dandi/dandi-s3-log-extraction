@@ -6,6 +6,11 @@ import pydantic
 import s3_log_extraction
 
 
+def _round_to_nearest_five(count: int) -> int:
+    """Round a requester count to the nearest multiple of 5 for privacy."""
+    return round(count / 5) * 5
+
+
 # TODO: can likely be replaced by the generic version
 @pydantic.validate_call
 def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None) -> None:
@@ -53,16 +58,38 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
 
         number_of_unique_regions = len(summary["region"])
         number_of_unique_countries = len(unique_countries)
+
+        unique_requester_count_file_path = dandiset_id_folder_path / "unique_requester_count.txt"
+        raw_unique_requester_count = (
+            int(unique_requester_count_file_path.read_text().strip())
+            if unique_requester_count_file_path.exists()
+            else 0
+        )
         all_dandiset_totals[dandiset_id] = {
             "total_bytes_sent": int(summary["bytes_sent"].sum()),
             "number_of_unique_regions": number_of_unique_regions,
             "number_of_unique_countries": number_of_unique_countries,
             "total_number_of_requests": int(summary["number_of_requests"].sum()),
+            "number_of_unique_requesters": _round_to_nearest_five(count=raw_unique_requester_count),
         }
 
     if not all_dandiset_totals:
         return
 
+    archive_unique_requester_count_file_path = summary_directory / "archive" / "unique_requester_count.txt"
+    archive_raw_unique_requester_count = (
+        int(archive_unique_requester_count_file_path.read_text().strip())
+        if archive_unique_requester_count_file_path.exists()
+        else 0
+    )
+    archive_totals: dict[str, int] = {
+        "total_bytes_sent": sum(entry["total_bytes_sent"] for entry in all_dandiset_totals.values()),
+        "total_number_of_requests": sum(
+            entry["total_number_of_requests"] for entry in all_dandiset_totals.values()
+        ),
+        "number_of_unique_requesters": _round_to_nearest_five(count=archive_raw_unique_requester_count),
+    }
+
     top_level_summary_file_path = summary_directory / "totals.json"
     with top_level_summary_file_path.open(mode="w") as io:
-        json.dump(obj=all_dandiset_totals, fp=io)
+        json.dump(obj={**all_dandiset_totals, "archive": archive_totals}, fp=io)

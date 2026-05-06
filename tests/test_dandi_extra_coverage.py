@@ -15,10 +15,13 @@ import dandi_s3_log_extraction.summarize
 from dandi_s3_log_extraction._parallel._utils import _handle_max_workers
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _summarize_archive_by_asset_type_per_week,
+    _summarize_archive_unique_requester_count,
     _summarize_dandiset_by_asset,
     _summarize_dandiset_by_day,
     _summarize_dandiset_by_region,
+    _summarize_dandiset_unique_requester_count,
 )
+from dandi_s3_log_extraction.summarize._generate_dandiset_totals import _round_to_nearest_five
 
 # ─── _handle_max_workers ──────────────────────────────────────────────────────
 
@@ -370,3 +373,190 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     ny_row = result[result["region"] == "US/New York"].iloc[0]
     assert ny_row["bytes_sent"] == 200
     assert ny_row["number_of_requests"] == 1
+
+
+# ─── _round_to_nearest_five ───────────────────────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_round_to_nearest_five_basic() -> None:
+    """_round_to_nearest_five rounds to the nearest multiple of 5."""
+    assert _round_to_nearest_five(0) == 0
+    assert _round_to_nearest_five(2) == 0
+    assert _round_to_nearest_five(3) == 5
+    assert _round_to_nearest_five(5) == 5
+    assert _round_to_nearest_five(7) == 5
+    assert _round_to_nearest_five(8) == 10
+    assert _round_to_nearest_five(10) == 10
+    assert _round_to_nearest_five(13) == 15
+    assert _round_to_nearest_five(100) == 100
+
+
+# ─── _summarize_dandiset_unique_requester_count ───────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_basic(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count counts unique IP indices across blobs."""
+    blob_dir1 = tmp_path / "blob1"
+    blob_dir1.mkdir()
+    (blob_dir1 / "indexed_ips.txt").write_text("10\n20\n10\n")  # 2 unique IPs
+
+    blob_dir2 = tmp_path / "blob2"
+    blob_dir2.mkdir()
+    (blob_dir2 / "indexed_ips.txt").write_text("20\n30\n")  # 1 new unique IP
+
+    summary_file_path = tmp_path / "unique_requester_count.txt"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir1, blob_dir2],
+        summary_file_path=summary_file_path,
+    )
+
+    # 3 unique IP indices: 10, 20, 30
+    assert summary_file_path.read_text() == "3"
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_no_indexed_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count returns early when no indexed_ips.txt exists."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    # No indexed_ips.txt file
+
+    summary_file_path = tmp_path / "unique_requester_count.txt"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert not summary_file_path.exists()
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_missing_blob_dir(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count skips non-existent blob directories."""
+    missing_dir = tmp_path / "nonexistent"
+    # Does not exist
+
+    summary_file_path = tmp_path / "unique_requester_count.txt"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[missing_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert not summary_file_path.exists()
+
+
+# ─── _summarize_archive_unique_requester_count ────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_basic(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count sums per-dandiset counts."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir1 = summary_dir / "000001"
+    dandiset_dir1.mkdir(parents=True)
+    (dandiset_dir1 / "unique_requester_count.txt").write_text("7")
+
+    dandiset_dir2 = summary_dir / "000002"
+    dandiset_dir2.mkdir()
+    (dandiset_dir2 / "unique_requester_count.txt").write_text("3")
+
+    _summarize_archive_unique_requester_count(summary_directory=summary_dir)
+
+    archive_count_file = summary_dir / "archive" / "unique_requester_count.txt"
+    assert archive_count_file.exists()
+    assert archive_count_file.read_text() == "10"
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_skips_archive_dir(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count does not read from the archive directory itself."""
+    summary_dir = tmp_path / "summaries"
+    archive_dir = summary_dir / "archive"
+    archive_dir.mkdir(parents=True)
+    (archive_dir / "unique_requester_count.txt").write_text("999")
+
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir()
+    (dandiset_dir / "unique_requester_count.txt").write_text("5")
+
+    _summarize_archive_unique_requester_count(summary_directory=summary_dir)
+
+    # 999 should NOT be included; only 5 from 000001, overwrites archive file
+    assert (archive_dir / "unique_requester_count.txt").read_text() == "5"
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_empty(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count returns early when no counts exist."""
+    summary_dir = tmp_path / "summaries"
+    summary_dir.mkdir()
+
+    _summarize_archive_unique_requester_count(summary_directory=summary_dir)
+
+    assert not (summary_dir / "archive" / "unique_requester_count.txt").exists()
+
+
+# ─── generate_dandiset_totals with unique requesters ─────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_includes_unique_requesters(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals includes number_of_unique_requesters (rounded to nearest 5)."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+
+    # 8 unique requesters → rounds to 10
+    (dandiset_dir / "unique_requester_count.txt").write_text("8")
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert totals["000001"]["number_of_unique_requesters"] == 10
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_missing_unique_requesters_defaults_to_zero(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals sets number_of_unique_requesters to 0 when count file is absent."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+    # No unique_requester_count.txt
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert totals["000001"]["number_of_unique_requesters"] == 0
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_archive_unique_requesters(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals includes archive totals with number_of_unique_requesters."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [200], "number_of_requests": [5]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+    (dandiset_dir / "unique_requester_count.txt").write_text("3")
+
+    archive_dir = summary_dir / "archive"
+    archive_dir.mkdir()
+    # 13 unique requesters summed at archive level → rounds to 15
+    (archive_dir / "unique_requester_count.txt").write_text("13")
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert "archive" in totals
+    assert totals["archive"]["total_bytes_sent"] == 200
+    assert totals["archive"]["total_number_of_requests"] == 5
+    assert totals["archive"]["number_of_unique_requesters"] == 15
