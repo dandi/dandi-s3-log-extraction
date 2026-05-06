@@ -84,9 +84,7 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
     )
     archive_totals: dict[str, int] = {
         "total_bytes_sent": sum(entry["total_bytes_sent"] for entry in all_dandiset_totals.values()),
-        "total_number_of_requests": sum(
-            entry["total_number_of_requests"] for entry in all_dandiset_totals.values()
-        ),
+        "total_number_of_requests": sum(entry["total_number_of_requests"] for entry in all_dandiset_totals.values()),
         "number_of_unique_requesters": _round_to_nearest_five(count=archive_raw_unique_requester_count),
     }
 
