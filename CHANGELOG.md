@@ -10,6 +10,8 @@ Removed the `--manifest` CLI option and `manifest_file_path` parameter from `dan
 
 `DandiS3LogAccessExtractor` now raises `NotImplementedError` to indicate that this package only supports the remote extractor. Use `DandiRemoteS3LogAccessExtractor` instead. The CLI modes `dandi` and `dandi-remote` similarly raise `NotImplementedError`; use `--mode remote` for all extraction.
 
+Replaced the local `generate_dandiset_totals` implementation with a delegation to `s3_log_extraction.summarize.generate_all_dataset_totals`. The function signature is unchanged. Behavioral changes: the `archive` subdirectory is no longer explicitly excluded (if it has a `by_region.tsv` file it will be included in totals); an empty summary directory now always writes `totals.json` containing `{}`; JSON output now uses `indent=2`.
+
 ## Features
 
 Added `download` field to the GAWK extraction step in `_dandi_extraction.awk`. The value is `1` when the HTTP status is exactly `200` (complete transfer) and `0` for all other 2xx codes (e.g. `206` partial). Values are stored in `download.txt` alongside `timestamps.txt`, `bytes_sent.txt`, and `full_ips.txt`.

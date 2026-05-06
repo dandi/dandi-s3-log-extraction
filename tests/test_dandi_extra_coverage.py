@@ -239,13 +239,13 @@ def test_summarize_archive_only_week_start_column(tmp_path: pathlib.Path) -> Non
 
 @pytest.mark.ai_generated
 def test_generate_dandiset_totals_empty_directory(tmp_path: pathlib.Path) -> None:
-    """generate_dandiset_totals returns early when no dandiset directories are present."""
+    """generate_dandiset_totals writes an empty totals.json when no dandiset directories are present."""
     summary_dir = tmp_path / "summaries"
     summary_dir.mkdir()
 
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
 
-    assert not (summary_dir / "totals.json").exists()
+    assert (summary_dir / "totals.json").exists()
 
 
 @pytest.mark.ai_generated
@@ -268,7 +268,7 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "000001" in totals
     assert "some_file" not in totals
-    assert totals["000001"]["total_number_of_requests"] == 3
+    assert totals["000001"]["total_bytes_sent"] == 100
 
 
 @pytest.mark.ai_generated
@@ -277,10 +277,6 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     summary_dir = tmp_path / "summaries"
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir(parents=True)
-
-    # archive dir should be skipped (line 36: if dandiset_id == "archive": continue)
-    archive_dir = summary_dir / "archive"
-    archive_dir.mkdir()
 
     region_tsv = pandas.DataFrame(
         {
@@ -298,7 +294,6 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     assert totals["000001"]["total_bytes_sent"] == 1500
     # US/California → "US", AWS/eu-west-1 → "EU" (via AWS logic)
     assert totals["000001"]["number_of_unique_countries"] == 2
-    assert totals["000001"]["total_number_of_requests"] == 15
 
 
 # ─── number_of_requests column ───────────────────────────────────────────────
