@@ -168,7 +168,19 @@ def generate_dandiset_summaries(
     _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
     _summarize_archive_by_day(summary_directory=summary_directory)
     _summarize_archive_by_region(summary_directory=summary_directory)
-    _summarize_archive_unique_requester_count(summary_directory=summary_directory)
+
+    if unassociated:
+        all_blob_directories_for_archive = dandiset_id_to_local_content_directories.get("undetermined", [])
+    else:
+        all_blob_directories_for_archive = []
+        for dandiset_id in dandiset_ids_to_summarize:
+            all_blob_directories_for_archive.extend(
+                dandiset_id_to_local_content_directories.get(dandiset_id, [])
+            )
+    _summarize_archive_unique_requester_count(
+        blob_directories=all_blob_directories_for_archive,
+        summary_file_path=summary_directory / "archive" / "requester_count.tsv",
+    )
 
 
 def _get_determinable_dandi_asset_info(
@@ -296,7 +308,7 @@ def _summarize_dandiset(
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
-        summary_file_path=summary_directory / dandiset_id / "unique_requester_count.txt",
+        summary_file_path=summary_directory / dandiset_id / "requester_count.tsv",
     )
 
 
@@ -625,16 +637,50 @@ def _summarize_dandiset_by_region(
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
-def _summarize_dandiset_unique_requester_count(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path
-) -> None:
+def _round_requester_count(count: int, modulo: int, minimum: int) -> str | int:
     """
-    Count unique requesters (unique IP indices) across all blobs for a Dandiset.
+    Round a unique requester count for privacy protection.
 
-    The raw count is written to a text file for later use in generating totals with
-    privacy-safe rounding applied.
+    If the count is less than ``minimum``, returns a sentinel string indicating
+    the count is below the threshold (e.g., ``"<50"``). Otherwise, rounds to the
+    nearest multiple of ``modulo``.
+
+    Parameters
+    ----------
+    count : int
+        The exact number of unique requesters to round.
+    modulo : int
+        The granularity used for rounding (e.g., ``20`` rounds to the nearest 20).
+    minimum : int
+        The minimum disclosure threshold. Counts below this value are reported
+        as ``"<{minimum}"`` to protect privacy.
+
+    Returns
+    -------
+    str or int
+        A string of the form ``"<{minimum}"`` if ``count < minimum``, otherwise
+        an integer rounded to the nearest multiple of ``modulo``.
     """
-    all_ip_indices: set[int] = set()
+    if count < minimum:
+        return f"<{minimum}"
+    return round(count / modulo) * modulo
+
+
+def _collect_unique_ip_indexes(blob_directories: list[pathlib.Path]) -> set[str]:
+    """
+    Collect all unique IP indexes across the given blob directories.
+
+    Parameters
+    ----------
+    blob_directories : list of pathlib.Path
+        Paths to per-blob extraction directories containing ``indexed_ips.txt`` files.
+
+    Returns
+    -------
+    set of str
+        The set of unique IP index strings found across all ``indexed_ips.txt`` files.
+    """
+    unique_ip_indexes: set[str] = set()
     for blob_directory in blob_directories:
         if not blob_directory.exists():
             continue
@@ -643,38 +689,76 @@ def _summarize_dandiset_unique_requester_count(
         if not indexed_ips_file_path.exists():
             continue
 
-        indexed_ips = [int(ip_index.strip()) for ip_index in indexed_ips_file_path.read_text().splitlines()]
-        all_ip_indices.update(indexed_ips)
+        unique_ip_indexes.update(ip.strip() for ip in indexed_ips_file_path.read_text().splitlines())
+    return unique_ip_indexes
 
-    if not all_ip_indices:
+
+def _summarize_dandiset_unique_requester_count(
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    modulo: int = 20,
+    minimum: int = 50,
+) -> None:
+    """
+    Compute and save the privacy-rounded unique requester count for a Dandiset.
+
+    Reads all ``indexed_ips.txt`` files from the given blob directories, counts the
+    number of unique IP indexes across the entire Dandiset, rounds the result via
+    :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
+
+    Parameters
+    ----------
+    blob_directories : list of pathlib.Path
+        Paths to the per-blob extraction directories containing ``indexed_ips.txt`` files.
+    summary_file_path : pathlib.Path
+        Destination file where the rounded count (as a string) will be written.
+    modulo : int, optional
+        Granularity for rounding. Default is ``20``.
+    minimum : int, optional
+        Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
+        Default is ``50``.
+    """
+    unique_ip_indexes = _collect_unique_ip_indexes(blob_directories=blob_directories)
+
+    if not unique_ip_indexes:
         return
 
+    rounded_count = _round_requester_count(count=len(unique_ip_indexes), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_file_path.write_text(str(len(all_ip_indices)))
+    summary_file_path.write_text(str(rounded_count))
 
 
-def _summarize_archive_unique_requester_count(*, summary_directory: pathlib.Path) -> None:
+def _summarize_archive_unique_requester_count(
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    modulo: int = 20,
+    minimum: int = 50,
+) -> None:
     """
-    Aggregate unique requester counts across all Dandisets for an archive-level total.
+    Compute and save the privacy-rounded unique requester count for the archive.
 
-    Sums the per-Dandiset raw requester counts. Note: this is an upper bound on the
-    true archive-wide unique requester count, since the same requester may appear in
-    multiple Dandisets.
+    Collects unique IP indexes across all provided blob directories (a true union
+    across all Dandisets), rounds the result, and writes the value to ``summary_file_path``.
+
+    Parameters
+    ----------
+    blob_directories : list of pathlib.Path
+        All per-blob extraction directories from all Dandisets.
+    summary_file_path : pathlib.Path
+        Destination file where the rounded count will be written.
+    modulo : int, optional
+        Granularity for rounding. Default is ``20``.
+    minimum : int, optional
+        Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
+        Default is ``50``.
     """
-    total_unique_requester_count = 0
-    for dandiset_dir in summary_directory.iterdir():
-        if not dandiset_dir.is_dir() or dandiset_dir.name == "archive":
-            continue
+    unique_ip_indexes = _collect_unique_ip_indexes(blob_directories=blob_directories)
 
-        count_file = dandiset_dir / "unique_requester_count.txt"
-        if not count_file.exists():
-            continue
-
-        total_unique_requester_count += int(count_file.read_text().strip())
-
-    if total_unique_requester_count == 0:
+    if not unique_ip_indexes:
         return
 
-    archive_dir = summary_directory / "archive"
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    (archive_dir / "unique_requester_count.txt").write_text(str(total_unique_requester_count))
+    rounded_count = _round_requester_count(count=len(unique_ip_indexes), modulo=modulo, minimum=minimum)
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_file_path.write_text(str(rounded_count))
