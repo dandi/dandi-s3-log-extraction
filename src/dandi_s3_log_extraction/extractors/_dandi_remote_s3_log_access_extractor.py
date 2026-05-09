@@ -1,7 +1,11 @@
 import pathlib
 
 import s3_log_extraction
-import s3_log_extraction.encryption_utils
+
+try:
+    from s3_log_extraction.utils import encryption as _encryption
+except ImportError:
+    import s3_log_extraction.encryption_utils as _encryption
 
 from .._regex import DROGON_IP_REGEX_ENCRYPTED
 
@@ -30,5 +34,5 @@ class DandiRemoteS3LogAccessExtractor(s3_log_extraction.extractors.RemoteS3LogAc
 
         self._relative_script_path = pathlib.Path(__file__).parent / "_dandi_extraction.awk"
 
-        ips_to_skip_regex = s3_log_extraction.encryption_utils.decrypt_bytes(encrypted_data=DROGON_IP_REGEX_ENCRYPTED)
+        ips_to_skip_regex = _encryption.decrypt_bytes(encrypted_data=DROGON_IP_REGEX_ENCRYPTED)
         self._awk_env["IPS_TO_SKIP_REGEX"] = ips_to_skip_regex.decode("utf-8")
