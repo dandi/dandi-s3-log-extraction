@@ -53,16 +53,38 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
 
         number_of_unique_regions = len(summary["region"])
         number_of_unique_countries = len(unique_countries)
+
+        requester_count_file_path = dandiset_id_folder_path / "requester_count.tsv"
+        number_of_requesters: str | int = (
+            requester_count_file_path.read_text().strip() if requester_count_file_path.exists() else 0
+        )
+        if isinstance(number_of_requesters, str) and not number_of_requesters.startswith("<"):
+            number_of_requesters = int(number_of_requesters)
+
         all_dandiset_totals[dandiset_id] = {
             "total_bytes_sent": int(summary["bytes_sent"].sum()),
             "number_of_unique_regions": number_of_unique_regions,
             "number_of_unique_countries": number_of_unique_countries,
             "total_number_of_requests": int(summary["number_of_requests"].sum()),
+            "number_of_requesters": number_of_requesters,
         }
 
     if not all_dandiset_totals:
         return
 
+    archive_requester_count_file_path = summary_directory / "archive" / "requester_count.tsv"
+    archive_number_of_requesters: str | int = (
+        archive_requester_count_file_path.read_text().strip() if archive_requester_count_file_path.exists() else 0
+    )
+    if isinstance(archive_number_of_requesters, str) and not archive_number_of_requesters.startswith("<"):
+        archive_number_of_requesters = int(archive_number_of_requesters)
+
+    archive_totals: dict[str, int | str] = {
+        "total_bytes_sent": sum(entry["total_bytes_sent"] for entry in all_dandiset_totals.values()),
+        "total_number_of_requests": sum(entry["total_number_of_requests"] for entry in all_dandiset_totals.values()),
+        "number_of_requesters": archive_number_of_requesters,
+    }
+
     top_level_summary_file_path = summary_directory / "totals.json"
     with top_level_summary_file_path.open(mode="w") as io:
-        json.dump(obj=all_dandiset_totals, fp=io)
+        json.dump(obj={**all_dandiset_totals, "archive": archive_totals}, fp=io)

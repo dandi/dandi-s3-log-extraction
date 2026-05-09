@@ -1,3 +1,4 @@
+import json
 import pathlib
 import shutil
 
@@ -28,9 +29,15 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     )
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=test_summary_dir)
 
-    test_file_paths = {path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="*.tsv")}
+    test_file_paths = {
+        path.relative_to(test_summary_dir): path
+        for path in test_summary_dir.rglob(pattern="*.tsv")
+        if path.name != "requester_count.tsv"
+    }
     expected_file_paths = {
-        path.relative_to(expected_summaries_dir): path for path in expected_summaries_dir.rglob(pattern="*.tsv")
+        path.relative_to(expected_summaries_dir): path
+        for path in expected_summaries_dir.rglob(pattern="*.tsv")
+        if path.name != "requester_count.tsv"
     }
     assert set(test_file_paths.keys()) == set(expected_file_paths.keys())
 
@@ -50,3 +57,28 @@ def test_dandiset_summaries(tmpdir: py.path.local):
                 f"{str(exception)}\n\n"
             )
             raise AssertionError(message)
+
+    # Verify requester_count.tsv files
+    test_tsv_paths = {
+        path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="requester_count.tsv")
+    }
+    expected_tsv_paths = {
+        path.relative_to(expected_summaries_dir): path
+        for path in expected_summaries_dir.rglob(pattern="requester_count.tsv")
+    }
+    assert set(test_tsv_paths.keys()) == set(expected_tsv_paths.keys())
+
+    for relative_path, expected_tsv_path in expected_tsv_paths.items():
+        test_tsv_path = test_summary_dir / relative_path
+        assert test_tsv_path.read_text().strip() == expected_tsv_path.read_text().strip(), (
+            f"\n\nMismatch in {relative_path}:\n"
+            f"  test:     {test_tsv_path.read_text().strip()!r}\n"
+            f"  expected: {expected_tsv_path.read_text().strip()!r}\n"
+        )
+
+    # Verify totals.json
+    test_totals = json.loads((test_summary_dir / "totals.json").read_text())
+    expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
+    assert (
+        test_totals == expected_totals
+    ), f"\n\ntotals.json mismatch:\n  test:     {test_totals}\n  expected: {expected_totals}\n"

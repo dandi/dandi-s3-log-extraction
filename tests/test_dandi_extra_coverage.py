@@ -14,10 +14,14 @@ import dandi_s3_log_extraction
 import dandi_s3_log_extraction.summarize
 from dandi_s3_log_extraction._parallel._utils import _handle_max_workers
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _collect_unique_ip_indexes,
+    _round_requester_count,
     _summarize_archive_by_asset_type_per_week,
+    _summarize_archive_unique_requester_count,
     _summarize_dandiset_by_asset,
     _summarize_dandiset_by_day,
     _summarize_dandiset_by_region,
+    _summarize_dandiset_unique_requester_count,
 )
 
 # ─── _handle_max_workers ──────────────────────────────────────────────────────
@@ -370,3 +374,256 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     ny_row = result[result["region"] == "US/New York"].iloc[0]
     assert ny_row["bytes_sent"] == 200
     assert ny_row["number_of_requests"] == 1
+
+
+# ─── _round_requester_count ───────────────────────────────────────────────────
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize(
+    ("count", "modulo", "minimum", "expected"),
+    [
+        # Below minimum → sentinel string
+        (0, 20, 50, "<50"),
+        (1, 20, 50, "<50"),
+        (49, 20, 50, "<50"),
+        # At or above minimum → rounded to nearest multiple of modulo
+        (50, 20, 50, 40),  # round(2.5)=2 (banker's rounding)
+        (55, 20, 50, 60),  # round(2.75)=3
+        (60, 20, 50, 60),
+        (100, 20, 50, 100),
+        (123, 20, 50, 120),
+        # Custom modulo and minimum
+        (4, 5, 5, "<5"),
+        (5, 5, 5, 5),
+        (7, 5, 5, 5),
+        (8, 5, 5, 10),
+        # minimum can differ from modulo
+        (9, 10, 5, 10),
+        (3, 10, 5, "<5"),
+    ],
+)
+def test_round_requester_count(count: int, modulo: int, minimum: int, expected: str | int) -> None:
+    """Privacy-rounding returns the sentinel below minimum and rounds to the nearest modulo otherwise."""
+    assert _round_requester_count(count=count, modulo=modulo, minimum=minimum) == expected
+
+
+# ─── _collect_unique_ip_indexes ──────────────────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_collect_unique_ip_indexes_basic(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ip_indexes returns the union of IP indices across all blob directories."""
+    blob_dir1 = tmp_path / "blob1"
+    blob_dir1.mkdir()
+    (blob_dir1 / "indexed_ips.txt").write_text("10\n20\n10\n")
+
+    blob_dir2 = tmp_path / "blob2"
+    blob_dir2.mkdir()
+    (blob_dir2 / "indexed_ips.txt").write_text("20\n30\n")
+
+    result = _collect_unique_ip_indexes(blob_directories=[blob_dir1, blob_dir2])
+    assert result == {"10", "20", "30"}
+
+
+@pytest.mark.ai_generated
+def test_collect_unique_ip_indexes_missing_file(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ip_indexes skips directories without indexed_ips.txt."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    # No indexed_ips.txt
+
+    result = _collect_unique_ip_indexes(blob_directories=[blob_dir])
+    assert result == set()
+
+
+@pytest.mark.ai_generated
+def test_collect_unique_ip_indexes_missing_dir(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ip_indexes skips non-existent directories."""
+    missing_dir = tmp_path / "nonexistent"
+    result = _collect_unique_ip_indexes(blob_directories=[missing_dir])
+    assert result == set()
+
+
+# ─── _summarize_dandiset_unique_requester_count ───────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count writes the sentinel when count < minimum."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    (blob_dir / "indexed_ips.txt").write_text("10\n20\n10\n")  # 2 unique IPs < 50 minimum
+
+    summary_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert summary_file_path.read_text() == "<50"
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count writes a rounded count when count >= minimum."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    # 55 unique IPs → >= 50 minimum → rounded to nearest 20 = 60
+    unique_ips = "\n".join(str(i) for i in range(55))
+    (blob_dir / "indexed_ips.txt").write_text(unique_ips)
+
+    summary_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert summary_file_path.read_text() == "60"
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_no_indexed_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count returns early when no indexed_ips.txt exists."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    # No indexed_ips.txt file
+
+    summary_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert not summary_file_path.exists()
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_missing_blob_dir(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count skips non-existent blob directories."""
+    missing_dir = tmp_path / "nonexistent"
+
+    summary_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[missing_dir],
+        summary_file_path=summary_file_path,
+    )
+
+    assert not summary_file_path.exists()
+
+
+# ─── _summarize_archive_unique_requester_count ────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count computes true union of IPs across all blobs."""
+    blob_dir1 = tmp_path / "blob1"
+    blob_dir1.mkdir()
+    (blob_dir1 / "indexed_ips.txt").write_text("10\n20\n")
+
+    blob_dir2 = tmp_path / "blob2"
+    blob_dir2.mkdir()
+    (blob_dir2 / "indexed_ips.txt").write_text("20\n30\n")  # 20 is shared
+
+    archive_file = tmp_path / "archive" / "requester_count.tsv"
+    _summarize_archive_unique_requester_count(
+        blob_directories=[blob_dir1, blob_dir2],
+        summary_file_path=archive_file,
+    )
+
+    # 3 unique IPs (10, 20, 30) → all < 50 → sentinel
+    assert archive_file.read_text() == "<50"
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_empty(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count returns early when no IPs exist."""
+    archive_file = tmp_path / "archive" / "requester_count.tsv"
+    _summarize_archive_unique_requester_count(
+        blob_directories=[],
+        summary_file_path=archive_file,
+    )
+
+    assert not archive_file.exists()
+
+
+# ─── generate_dandiset_totals with requesters ─────────────────────────────────
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_includes_requesters_sentinel(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals passes through the sentinel string for number_of_requesters."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+
+    # sentinel written by _summarize_dandiset_unique_requester_count
+    (dandiset_dir / "requester_count.tsv").write_text("<50")
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert totals["000001"]["number_of_requesters"] == "<50"
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_includes_requesters_integer(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals converts a plain integer string to int for number_of_requesters."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+
+    (dandiset_dir / "requester_count.tsv").write_text("80")
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert totals["000001"]["number_of_requesters"] == 80
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_missing_requesters_defaults_to_zero(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals sets number_of_requesters to 0 when count file is absent."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+    # No requester_count.tsv
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert totals["000001"]["number_of_requesters"] == 0
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_archive_requesters(tmp_path: pathlib.Path) -> None:
+    """generate_dandiset_totals includes archive totals with number_of_requesters."""
+    summary_dir = tmp_path / "summaries"
+    dandiset_dir = summary_dir / "000001"
+    dandiset_dir.mkdir(parents=True)
+
+    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [200], "number_of_requests": [5]})
+    region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
+    (dandiset_dir / "requester_count.tsv").write_text("<50")
+
+    archive_dir = summary_dir / "archive"
+    archive_dir.mkdir()
+    (archive_dir / "requester_count.tsv").write_text("<50")
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+
+    totals = json.loads((summary_dir / "totals.json").read_text())
+    assert "archive" in totals
+    assert totals["archive"]["total_bytes_sent"] == 200
+    assert totals["archive"]["total_number_of_requests"] == 5
+    assert totals["archive"]["number_of_requesters"] == "<50"

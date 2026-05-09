@@ -18,6 +18,15 @@ Added `--inventory` CLI flag to `dandis3logextraction extract --mode remote`, ex
 
 Added `--directory` CLI option to both `dandis3logextraction update summaries` and `dandis3logextraction update totals`, mapping to the `cache_directory` parameter. For `update summaries`, it is passed directly as `cache_directory`. For `update totals`, the CLI derives `summary_directory = cache_directory / "summaries"` internally.
 
+Added `number_of_requesters` field to Dandiset and archive level summaries. The count of unique requesters
+(unique IP indices) per Dandiset is computed during summarization and written to `requester_count.tsv` per
+Dandiset. For privacy protection, counts below the minimum threshold (50) are reported as the sentinel
+string `"<50"`, while counts at or above the threshold are rounded to the nearest multiple of 20.
+The archive-level count is a true union of all unique IP indices across all Dandisets. The
+`generate_dandiset_totals` function reads these values and emits `number_of_requesters` in `totals.json`
+for each Dandiset and for the archive. The unique requester count is intentionally not coupled to region
+information and is not reported at the per-asset level.
+
 # v0.0.5
 
 ## Improvements
