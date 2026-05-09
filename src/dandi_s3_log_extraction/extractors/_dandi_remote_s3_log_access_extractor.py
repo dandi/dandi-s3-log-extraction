@@ -1,6 +1,7 @@
 import pathlib
 
 import s3_log_extraction
+import s3_log_extraction.encryption_utils
 
 from .._regex import DROGON_IP_REGEX_ENCRYPTED
 

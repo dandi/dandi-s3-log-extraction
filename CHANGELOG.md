@@ -2,6 +2,10 @@
 
 # Upcoming
 
+## Improvements
+
+Updated compatibility for latest `s3-log-extraction` by pinning the lower bound to `>=1.9.2` and adapting extractor/tests to current upstream APIs and summary columns.
+
 ## Removals
 
 Removed the database bundling tools (`bundle_database` function, `dandis3logextraction update database` CLI command, and `database` submodule). These are retired in favor of restic snapshots as the external sharing layer. The `sharing` optional dependency group (which provided `polars`) has also been removed.

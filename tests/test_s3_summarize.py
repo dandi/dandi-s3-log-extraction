@@ -141,6 +141,8 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
         {
             "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
+            "number_of_requests": [1, 2, 3, 4, 5],
+            "number_of_downloads": [1, 1, 1, 2, 2],
         }
     )
     region_tsv.to_csv(path_or_buf=dataset_dir / "by_region.tsv", sep="\t", index=False)
@@ -152,6 +154,8 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
     totals = json.loads(output_path.read_text())
     assert "dataset1" in totals
     assert totals["dataset1"]["total_bytes_sent"] == 1500
+    assert totals["dataset1"]["total_number_of_requests"] == 15
+    assert totals["dataset1"]["total_number_of_downloads"] == 7
     # US/California → country "US", AWS/eu-west-1 → country "EU"
     assert totals["dataset1"]["number_of_unique_countries"] == 2
 
@@ -167,6 +171,8 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
         {
             "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
+            "number_of_requests": [1, 2, 3, 4, 5],
+            "number_of_downloads": [1, 1, 1, 2, 2],
         }
     )
     region_tsv.to_csv(path_or_buf=archive_dir / "by_region.tsv", sep="\t", index=False)
@@ -177,5 +183,7 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
     assert output_path.exists()
     result = json.loads(output_path.read_text())
     assert result["total_bytes_sent"] == 1500
+    assert result["total_number_of_requests"] == 15
+    assert result["total_number_of_downloads"] == 7
     # US/California → "US", AWS/eu-west-1 → "EU" (from region_code.split("-")[0].upper())
     assert result["number_of_unique_countries"] == 2
