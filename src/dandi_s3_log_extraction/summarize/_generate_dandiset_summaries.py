@@ -174,9 +174,7 @@ def generate_dandiset_summaries(
     else:
         all_blob_directories_for_archive = []
         for dandiset_id in dandiset_ids_to_summarize:
-            all_blob_directories_for_archive.extend(
-                dandiset_id_to_local_content_directories.get(dandiset_id, [])
-            )
+            all_blob_directories_for_archive.extend(dandiset_id_to_local_content_directories.get(dandiset_id, []))
     _summarize_archive_unique_requester_count(
         blob_directories=all_blob_directories_for_archive,
         summary_file_path=summary_directory / "archive" / "requester_count.tsv",

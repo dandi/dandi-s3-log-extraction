@@ -60,8 +60,7 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
     # Verify requester_count.tsv files
     test_tsv_paths = {
-        path.relative_to(test_summary_dir): path
-        for path in test_summary_dir.rglob(pattern="requester_count.tsv")
+        path.relative_to(test_summary_dir): path for path in test_summary_dir.rglob(pattern="requester_count.tsv")
     }
     expected_tsv_paths = {
         path.relative_to(expected_summaries_dir): path

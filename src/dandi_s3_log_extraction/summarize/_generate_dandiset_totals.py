@@ -74,18 +74,14 @@ def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None
 
     archive_requester_count_file_path = summary_directory / "archive" / "requester_count.tsv"
     archive_number_of_requesters: str | int = (
-        archive_requester_count_file_path.read_text().strip()
-        if archive_requester_count_file_path.exists()
-        else 0
+        archive_requester_count_file_path.read_text().strip() if archive_requester_count_file_path.exists() else 0
     )
     if isinstance(archive_number_of_requesters, str) and not archive_number_of_requesters.startswith("<"):
         archive_number_of_requesters = int(archive_number_of_requesters)
 
     archive_totals: dict[str, int | str] = {
         "total_bytes_sent": sum(entry["total_bytes_sent"] for entry in all_dandiset_totals.values()),
-        "total_number_of_requests": sum(
-            entry["total_number_of_requests"] for entry in all_dandiset_totals.values()
-        ),
+        "total_number_of_requests": sum(entry["total_number_of_requests"] for entry in all_dandiset_totals.values()),
         "number_of_requesters": archive_number_of_requesters,
     }
 
