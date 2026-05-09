@@ -1,11 +1,7 @@
 import pathlib
 
 import s3_log_extraction
-
-try:
-    from s3_log_extraction.utils import encryption as _encryption
-except ImportError:
-    import s3_log_extraction.encryption_utils as _encryption
+from s3_log_extraction.utils import encryption as _encryption
 
 from .._regex import DROGON_IP_REGEX_ENCRYPTED
 
