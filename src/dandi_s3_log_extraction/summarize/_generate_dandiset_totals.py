@@ -2,12 +2,12 @@ import json
 import pathlib
 
 import pandas
-import pydantic
 import s3_log_extraction
+from beartype import beartype
 
 
 # TODO: can likely be replaced by the generic version
-@pydantic.validate_call
+@beartype
 def generate_dandiset_totals(summary_directory: str | pathlib.Path | None = None) -> None:
     """
     Generate top-level totals of summarized access activity for all Dandisets.

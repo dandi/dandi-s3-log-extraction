@@ -8,10 +8,10 @@ import pathlib
 
 import natsort
 import pandas
-import pydantic
 import requests
 import s3_log_extraction
 import tqdm
+from beartype import beartype
 
 from .._parallel._utils import _handle_max_workers
 
@@ -21,7 +21,7 @@ MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".tr
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 
-@pydantic.validate_call
+@beartype
 def generate_dandiset_summaries(
     *,
     cache_directory: str | pathlib.Path | None = None,
