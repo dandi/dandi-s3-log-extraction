@@ -4,6 +4,8 @@
 
 ## Improvements
 
+Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions.
+
 Updated compatibility for latest `s3-log-extraction` by pinning the lower bound to `>=1.9.2` and adapting extractor/tests to current upstream APIs and summary columns.
 
 ## Removals
