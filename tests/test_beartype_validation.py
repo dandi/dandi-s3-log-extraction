@@ -1,5 +1,5 @@
-from beartype.roar import BeartypeCallHintParamViolation
 import pytest
+from beartype.roar import BeartypeCallHintParamViolation
 
 import dandi_s3_log_extraction.summarize
 
