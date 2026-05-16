@@ -33,6 +33,7 @@ def test_extract_remote_mode(tmp_path: pathlib.Path) -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "remote"])
 
         assert result.exit_code == 0, result.output
+        mock_extractor_class.assert_called_once_with(cache_directory=None)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path), limit=None, workers=-2, inventory_directory=None
         )
@@ -65,6 +66,7 @@ def test_extract_with_limit_and_workers(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
+        mock_extractor_class.assert_called_once_with(cache_directory=None)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path), limit=5, workers=2, inventory_directory=None
         )
@@ -88,11 +90,39 @@ def test_extract_remote_with_inventory(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
+        mock_extractor_class.assert_called_once_with(cache_directory=None)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path),
             limit=None,
             workers=-2,
             inventory_directory=str(inventory_dir),
+        )
+
+
+@pytest.mark.ai_generated
+def test_extract_remote_with_cache_directory(tmp_path: pathlib.Path) -> None:
+    """Test extract command with --mode remote and --cache-directory passes cache_directory to extractor."""
+    runner = CliRunner()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    with patch(
+        "dandi_s3_log_extraction._command_line_interface._cli.DandiRemoteS3LogAccessExtractor"
+    ) as mock_extractor_class:
+        mock_extractor = MagicMock()
+        mock_extractor_class.return_value = mock_extractor
+
+        result = runner.invoke(
+            _dandis3logextraction_cli,
+            ["extract", str(tmp_path), "--mode", "remote", "--cache-directory", str(cache_dir)],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_extractor_class.assert_called_once_with(cache_directory=cache_dir)
+        mock_extractor.extract_s3_bucket.assert_called_once_with(
+            s3_root=str(tmp_path),
+            limit=None,
+            workers=-2,
+            inventory_directory=None,
         )
 
 

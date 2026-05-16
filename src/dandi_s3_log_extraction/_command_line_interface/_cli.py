@@ -39,6 +39,17 @@ def _dandis3logextraction_cli():
     default=-2,
 )
 @rich_click.option(
+    "--cache-directory",
+    "cache_directory",
+    help=(
+        "Use a non-default cache directory for this extraction run only. "
+        "This overrides the configured cache directory without modifying saved config."
+    ),
+    required=False,
+    type=rich_click.Path(writable=True, file_okay=False, dir_okay=True),
+    default=None,
+)
+@rich_click.option(
     "--mode",
     help=(
         "Special parsing mode related to expected object key structure; "
@@ -68,6 +79,7 @@ def _extract_cli(
     directory: str,
     limit: int | None = None,
     workers: int = -2,
+    cache_directory: str | None = None,
     mode: typing.Literal["remote"] | None = None,
     inventory_directory: str | None = None,
 ) -> None:
@@ -79,9 +91,10 @@ def _extract_cli(
 
     DIRECTORY : The path to the folder containing all raw S3 log files.
     """
+    cache_path = pathlib.Path(cache_directory) if cache_directory is not None else None
     match mode:
         case "remote":
-            extractor = DandiRemoteS3LogAccessExtractor()
+            extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_path)
             extractor.extract_s3_bucket(
                 s3_root=directory,
                 limit=limit,
