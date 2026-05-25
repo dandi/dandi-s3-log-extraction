@@ -4,7 +4,7 @@
 
 ## Improvements
 
-Renamed `--directory` CLI flag to `--cache-directory` in both `dandis3logextraction update summaries` and `dandis3logextraction update totals` to clearly indicate the flag corresponds to the `cache_directory` parameter.
+Renamed `--directory` CLI flag to `--cache` in both `dandis3logextraction update summaries` and `dandis3logextraction update totals` for consistency with the `extract` command's `--cache` flag.
 
 Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions.
 
