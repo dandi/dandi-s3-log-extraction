@@ -208,7 +208,7 @@ def _update_cli() -> None:
     default=False,
 )
 @rich_click.option(
-    "--directory",
+    "--cache",
     "cache_directory",
     help=(
         "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
@@ -259,7 +259,7 @@ def _update_summaries_cli(
     default=None,
 )
 @rich_click.option(
-    "--directory",
+    "--cache",
     "cache_directory",
     help=(
         "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "

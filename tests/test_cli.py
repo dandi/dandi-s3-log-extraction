@@ -100,8 +100,8 @@ def test_extract_remote_with_inventory(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_extract_remote_with_cache_directory(tmp_path: pathlib.Path) -> None:
-    """Test extract command with --mode remote and --cache-directory passes cache_directory to extractor."""
+def test_extract_remote_with_cache(tmp_path: pathlib.Path) -> None:
+    """Test extract command with --mode remote and --cache passes cache_directory to extractor."""
     runner = CliRunner()
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -113,7 +113,7 @@ def test_extract_remote_with_cache_directory(tmp_path: pathlib.Path) -> None:
 
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["extract", str(tmp_path), "--mode", "remote", "--cache-directory", str(cache_dir)],
+            ["extract", str(tmp_path), "--mode", "remote", "--cache", str(cache_dir)],
         )
 
         assert result.exit_code == 0, result.output
@@ -252,13 +252,13 @@ def test_update_totals_archive_mode() -> None:
 
 
 @pytest.mark.ai_generated
-def test_update_totals_archive_mode_with_directory(tmp_path: pathlib.Path) -> None:
-    """Test update totals --mode archive --directory passes derived summary_directory to generate_archive_totals."""
+def test_update_totals_archive_mode_with_cache(tmp_path: pathlib.Path) -> None:
+    """Test update totals --mode archive --cache passes derived summary_directory to generate_archive_totals."""  # noqa: E501
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.s3_log_extraction") as mock_s3:
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["update", "totals", "--mode", "archive", "--directory", str(tmp_path)],
+            ["update", "totals", "--mode", "archive", "--cache", str(tmp_path)],
         )
 
         assert result.exit_code == 0, result.output
@@ -266,13 +266,13 @@ def test_update_totals_archive_mode_with_directory(tmp_path: pathlib.Path) -> No
 
 
 @pytest.mark.ai_generated
-def test_update_summaries_with_directory(tmp_path: pathlib.Path) -> None:
-    """Test update summaries passes --directory to generate_dandiset_summaries as cache_directory."""
+def test_update_summaries_with_cache(tmp_path: pathlib.Path) -> None:
+    """Test update summaries passes --cache to generate_dandiset_summaries as cache_directory."""
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_summaries") as mock_gen:
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["update", "summaries", "--directory", str(tmp_path)],
+            ["update", "summaries", "--cache", str(tmp_path)],
         )
 
         assert result.exit_code == 0, result.output
@@ -288,13 +288,13 @@ def test_update_summaries_with_directory(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_update_totals_with_directory(tmp_path: pathlib.Path) -> None:
-    """Test update totals --directory derives summary_directory = cache_directory / 'summaries'."""
+def test_update_totals_with_cache(tmp_path: pathlib.Path) -> None:
+    """Test update totals --cache derives summary_directory = cache_directory / 'summaries'."""
     runner = CliRunner()
     with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_totals") as mock_totals:
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["update", "totals", "--directory", str(tmp_path)],
+            ["update", "totals", "--cache", str(tmp_path)],
         )
 
         assert result.exit_code == 0, result.output
