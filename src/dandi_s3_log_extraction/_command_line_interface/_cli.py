@@ -39,7 +39,7 @@ def _dandis3logextraction_cli():
     default=-2,
 )
 @rich_click.option(
-    "--cache-directory",
+    "--cache",
     "cache_directory",
     help=(
         "Use a non-default cache directory for this extraction run only. "

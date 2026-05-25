@@ -100,8 +100,8 @@ def test_extract_remote_with_inventory(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_extract_remote_with_cache_directory(tmp_path: pathlib.Path) -> None:
-    """Test extract command with --mode remote and --cache-directory passes cache_directory to extractor."""
+def test_extract_remote_with_cache(tmp_path: pathlib.Path) -> None:
+    """Test extract command with --mode remote and --cache passes cache_directory to extractor."""
     runner = CliRunner()
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
@@ -113,7 +113,7 @@ def test_extract_remote_with_cache_directory(tmp_path: pathlib.Path) -> None:
 
         result = runner.invoke(
             _dandis3logextraction_cli,
-            ["extract", str(tmp_path), "--mode", "remote", "--cache-directory", str(cache_dir)],
+            ["extract", str(tmp_path), "--mode", "remote", "--cache", str(cache_dir)],
         )
 
         assert result.exit_code == 0, result.output
