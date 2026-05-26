@@ -175,7 +175,7 @@ def test_update_summaries_archive_mode() -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["update", "summaries", "--mode", "archive"])
 
         assert result.exit_code == 0, result.output
-        mock_s3.summarize.generate_archive_summaries.assert_called_once_with()
+        mock_s3.summarize.generate_archive_summaries.assert_called_once_with(cache_directory=None)
 
 
 @pytest.mark.ai_generated
