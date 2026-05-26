@@ -4,6 +4,8 @@
 
 ## Improvements
 
+Refactored `generate_dandiset_totals` to accept `cache_directory` instead of `summary_directory`. The summary directory is now derived internally as `cache_directory / "summaries"`, consistent with `generate_dandiset_summaries`. The CLI `dandis3logextraction update totals` now passes `cache_directory` directly to `generate_dandiset_totals`.
+
 Renamed `--directory` CLI flag to `--cache` in both `dandis3logextraction update summaries` and `dandis3logextraction update totals` for consistency with the `extract` command's `--cache` flag.
 
 Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions.
