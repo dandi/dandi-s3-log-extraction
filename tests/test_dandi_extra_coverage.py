@@ -247,7 +247,7 @@ def test_generate_dandiset_totals_empty_directory(tmp_path: pathlib.Path) -> Non
     summary_dir = tmp_path / "summaries"
     summary_dir.mkdir()
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     assert not (summary_dir / "totals.json").exists()
 
@@ -267,7 +267,7 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "000001" in totals
@@ -295,7 +295,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "000001" in totals
@@ -564,7 +564,7 @@ def test_generate_dandiset_totals_includes_requesters_sentinel(tmp_path: pathlib
     # sentinel written by _summarize_dandiset_unique_requester_count
     (dandiset_dir / "requester_count.tsv").write_text("<50")
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert totals["000001"]["number_of_requesters"] == "<50"
@@ -582,7 +582,7 @@ def test_generate_dandiset_totals_includes_requesters_integer(tmp_path: pathlib.
 
     (dandiset_dir / "requester_count.tsv").write_text("80")
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert totals["000001"]["number_of_requesters"] == 80
@@ -599,7 +599,7 @@ def test_generate_dandiset_totals_missing_requesters_defaults_to_zero(tmp_path: 
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
     # No requester_count.tsv
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert totals["000001"]["number_of_requesters"] == 0
@@ -620,7 +620,7 @@ def test_generate_dandiset_totals_archive_requesters(tmp_path: pathlib.Path) -> 
     archive_dir.mkdir()
     (archive_dir / "requester_count.tsv").write_text("<50")
 
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
 
     totals = json.loads((summary_dir / "totals.json").read_text())
     assert "archive" in totals

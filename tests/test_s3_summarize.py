@@ -147,7 +147,7 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
     )
     region_tsv.to_csv(path_or_buf=dataset_dir / "by_region.tsv", sep="\t", index=False)
 
-    s3_log_extraction.summarize.generate_all_dataset_totals(summary_directory=summary_dir)
+    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=tmp_path)
 
     output_path = summary_dir / "totals.json"
     assert output_path.exists()
@@ -177,7 +177,7 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
     )
     region_tsv.to_csv(path_or_buf=archive_dir / "by_region.tsv", sep="\t", index=False)
 
-    s3_log_extraction.summarize.generate_archive_totals(summary_directory=summary_dir)
+    s3_log_extraction.summarize.generate_archive_totals(cache_directory=tmp_path)
 
     output_path = summary_dir / "archive_totals.json"
     assert output_path.exists()

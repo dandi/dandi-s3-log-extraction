@@ -27,7 +27,7 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=test_dir, workers=1, unassociated=True
     )
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(summary_directory=test_summary_dir)
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=test_dir)
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
