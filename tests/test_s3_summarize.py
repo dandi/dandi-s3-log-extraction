@@ -31,7 +31,7 @@ def test_generate_summaries_with_data(tmp_path: pathlib.Path) -> None:
     # YYMMDDHHMMSS format: 200101050635 → 2020-01-01
     (asset1 / "timestamps.txt").write_text("200101050635\n200101224258\n")
     (asset1 / "bytes_sent.txt").write_text("512\n1526223\n")
-    (asset1 / "indexed_ips.txt").write_text("12345\n67890\n")
+    (asset1 / "indexed_ips.txt").write_text("192.0.2.1\n192.0.2.2\n")
 
     asset2 = extraction_dir / "dataset1" / "asset2_no_ts"
     asset2.mkdir(parents=True)
@@ -46,10 +46,10 @@ def test_generate_summaries_with_data(tmp_path: pathlib.Path) -> None:
     # No timestamps.txt → summarized_activity_by_day stays empty → early return at line 111-112
     # No indexed_ips.txt → summarized_activity_by_region stays empty → early return at line 182-183
 
-    # Set up index_to_region cache
+    # Set up ip_to_region cache
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "index_to_region.yaml").write_text("12345: 'US/California'\n67890: 'unknown'\n")
+    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: 'US/California'\n192.0.2.2: 'unknown'\n")
 
     s3_log_extraction.summarize.generate_summaries(cache_directory=tmp_path)
 

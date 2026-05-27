@@ -10,9 +10,9 @@ from s3_log_extraction.ip_utils._ip_utils import (
     _get_cidr_address_ranges_and_subregions,
     _request_cidr_range,
 )
-from s3_log_extraction.ip_utils._update_index_to_region_codes import (
-    _get_region_code_from_ip_index,
-    update_index_to_region_codes,
+from s3_log_extraction.ip_utils._update_ip_to_region_codes import (
+    _get_region_code_from_ip_address,
+    update_ip_to_region_codes,
 )
 from s3_log_extraction.ip_utils._update_region_code_coordinates import (
     _get_coordinates_from_opencage,
@@ -187,125 +187,125 @@ def test_get_cidr_address_ranges_azure_raises() -> None:
     _clear_lru_caches()
 
 
-# ─── update_index_to_region_codes ─────────────────────────────────────────────
+# ─── update_ip_to_region_codes ─────────────────────────────────────────────
 
 
 @pytest.mark.ai_generated
-def test_update_index_to_region_codes_no_api_key(tmp_path: pathlib.Path) -> None:
-    """update_index_to_region_codes raises ValueError when IPINFO_API_KEY is not set."""
+def test_update_ip_to_region_codes_no_api_key(tmp_path: pathlib.Path) -> None:
+    """update_ip_to_region_codes raises ValueError when IPINFO_API_KEY is not set."""
     env = {k: v for k, v in os.environ.items() if k != "IPINFO_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(ValueError, match="IPINFO_API_KEY"):
-            update_index_to_region_codes(cache_directory=tmp_path)
+            update_ip_to_region_codes(cache_directory=tmp_path)
 
 
 @pytest.mark.ai_generated
-def test_update_index_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
-    """update_index_to_region_codes processes IPs correctly with mocked ipinfo."""
-    # Write unencrypted indexed_ips.yaml with 3 test entries (encrypt=False reads raw YAML)
+def test_update_ip_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
+    """update_ip_to_region_codes processes IPs correctly with mocked ipinfo."""
+    # Write full_ips.txt in the extraction subdirectory with 3 test IP addresses
+    extraction_dir = tmp_path / "extraction"
+    extraction_dir.mkdir(parents=True)
+    (extraction_dir / "full_ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.3\n")
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "indexed_ips.yaml").write_bytes(b"1: '1.2.3.4'\n2: '5.6.7.8'\n3: '9.10.11.12'\n")
 
-    # Mock _get_region_code_from_ip_index to return three different scenarios
+    # Mock _get_region_code_from_ip_address to return three different scenarios
     call_results = [None, "unknown", "US/California"]
 
-    def mock_get_region_code(ip_index, ip_address, ipinfo_handler, index_not_in_services):
+    def mock_get_region_code(ip_address, ipinfo_handler, ip_not_in_services):
         return call_results.pop(0)
 
     with (
         patch.dict(os.environ, {"IPINFO_API_KEY": "fake_key"}),
         patch("ipinfo.getHandler"),
         patch(
-            "s3_log_extraction.ip_utils._update_index_to_region_codes._get_region_code_from_ip_index",
+            "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_region_code_from_ip_address",
             side_effect=mock_get_region_code,
         ),
     ):
-        update_index_to_region_codes(cache_directory=tmp_path, encrypt=False)
+        update_ip_to_region_codes(cache_directory=tmp_path)
 
-    # index_to_region.yaml should contain only the non-None, non-"unknown" entry
-    result = yaml.safe_load((ip_cache_dir / "index_to_region.yaml").read_text())
+    # ip_to_region.yaml should contain only the non-None, non-"unknown" entry
+    result = yaml.safe_load((ip_cache_dir / "ip_to_region.yaml").read_text())
     assert result is not None
     assert "US/California" in result.values()
 
 
 @pytest.mark.ai_generated
-def test_update_index_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> None:
-    """update_index_to_region_codes respects batch_limit parameter."""
+def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> None:
+    """update_ip_to_region_codes respects batch_limit parameter."""
+    extraction_dir = tmp_path / "extraction"
+    extraction_dir.mkdir(parents=True)
+    # More IPs than batch_limit would process
+    ips_text = "\n".join(f"192.0.2.{i}" for i in range(1, 6))
+    (extraction_dir / "full_ips.txt").write_text(ips_text)
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
-    # More IPs than batch_limit would process
-    import yaml as _yaml
-
-    ips = {i: f"1.2.3.{i}" for i in range(1, 6)}
-    (ip_cache_dir / "indexed_ips.yaml").write_bytes(_yaml.dump(ips).encode())
 
     call_log = []
 
-    def mock_get_region_code(ip_index, ip_address, ipinfo_handler, index_not_in_services):
-        call_log.append(ip_index)
+    def mock_get_region_code(ip_address, ipinfo_handler, ip_not_in_services):
+        call_log.append(ip_address)
         return "US/TestRegion"
 
     with (
         patch.dict(os.environ, {"IPINFO_API_KEY": "fake_key"}),
         patch("ipinfo.getHandler"),
         patch(
-            "s3_log_extraction.ip_utils._update_index_to_region_codes._get_region_code_from_ip_index",
+            "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_region_code_from_ip_address",
             side_effect=mock_get_region_code,
         ),
     ):
-        update_index_to_region_codes(cache_directory=tmp_path, encrypt=False, batch_limit=1, batch_size=2)
+        update_ip_to_region_codes(cache_directory=tmp_path, batch_limit=1, batch_size=2)
 
     # With batch_limit=1 and batch_size=2, at most 2 IPs are processed
     assert len(call_log) <= 2
 
 
-# ─── _get_region_code_from_ip_index ──────────────────────────────────────────
+# ─── _get_region_code_from_ip_address ──────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.ai_generated
 def test_get_region_code_service_match_with_subregion() -> None:
-    """_get_region_code_from_ip_index matches a CIDR range and includes subregion."""
+    """_get_region_code_from_ip_address matches a CIDR range and includes subregion."""
     _clear_lru_caches()
-    index_not_in_services: dict = {}
+    ip_not_in_services: dict = {}
     mock_handler = MagicMock()
 
     with patch(
-        "s3_log_extraction.ip_utils._update_index_to_region_codes._get_cidr_address_ranges_and_subregions"
+        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
     ) as mock_cidr:
-        # First service ("GitHub") matches IP 1.2.3.4 in 1.2.3.0/24 with subregion "us-east-1"
-        mock_cidr.return_value = [("1.2.3.0/24", "us-east-1")]
+        # First service ("GitHub") matches IP 192.0.2.4 in 192.0.2.0/24 with subregion "us-east-1"
+        mock_cidr.return_value = [("192.0.2.0/24", "us-east-1")]
 
-        result = _get_region_code_from_ip_index(
-            ip_index=12345,
-            ip_address="1.2.3.4",
+        result = _get_region_code_from_ip_address(
+            ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            index_not_in_services=index_not_in_services,
+            ip_not_in_services=ip_not_in_services,
         )
 
     assert result == "GitHub/us-east-1"
-    assert index_not_in_services[12345] is False
+    assert ip_not_in_services["192.0.2.4"] is False
     _clear_lru_caches()
 
 
 @pytest.mark.ai_generated
 def test_get_region_code_service_match_no_subregion() -> None:
-    """_get_region_code_from_ip_index matches a CIDR range without a subregion."""
+    """_get_region_code_from_ip_address matches a CIDR range without a subregion."""
     _clear_lru_caches()
-    index_not_in_services: dict = {}
+    ip_not_in_services: dict = {}
     mock_handler = MagicMock()
 
     with patch(
-        "s3_log_extraction.ip_utils._update_index_to_region_codes._get_cidr_address_ranges_and_subregions"
+        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
     ) as mock_cidr:
         # No subregion (None)
-        mock_cidr.return_value = [("1.2.3.0/24", None)]
+        mock_cidr.return_value = [("192.0.2.0/24", None)]
 
-        result = _get_region_code_from_ip_index(
-            ip_index=12345,
-            ip_address="1.2.3.4",
+        result = _get_region_code_from_ip_address(
+            ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            index_not_in_services=index_not_in_services,
+            ip_not_in_services=ip_not_in_services,
         )
 
     assert result == "GitHub"
@@ -313,21 +313,20 @@ def test_get_region_code_service_match_no_subregion() -> None:
 
 
 @pytest.mark.ai_generated
-def test_get_region_code_already_in_index_not_in_services() -> None:
-    """_get_region_code_from_ip_index skips CIDR loop when ip_index is already known."""
+def test_get_region_code_already_in_ip_not_in_services() -> None:
+    """_get_region_code_from_ip_address skips CIDR loop when ip_address is already known."""
     _clear_lru_caches()
-    index_not_in_services: dict = {99999: True}  # already determined not in services
+    ip_not_in_services: dict = {"192.0.2.4": True}  # already determined not in services
     mock_handler = MagicMock()
 
     with patch(
-        "s3_log_extraction.ip_utils._update_index_to_region_codes._get_cidr_address_ranges_and_subregions"
+        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
     ) as mock_cidr:
-        # Should NOT be called because ip_index is already in index_not_in_services
-        _get_region_code_from_ip_index(
-            ip_index=99999,
-            ip_address="1.2.3.4",
+        # Should NOT be called because ip_address is already in ip_not_in_services
+        _get_region_code_from_ip_address(
+            ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            index_not_in_services=index_not_in_services,
+            ip_not_in_services=ip_not_in_services,
         )
         mock_cidr.assert_not_called()
     _clear_lru_caches()
@@ -347,7 +346,7 @@ def test_update_region_code_coordinates_no_keys(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_update_region_code_coordinates_no_index_file(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates raises FileNotFoundError when index_to_region.yaml is absent."""
+    """update_region_code_coordinates raises FileNotFoundError when ip_to_region.yaml is absent."""
     with (
         patch.dict(os.environ, {"OPENCAGE_API_KEY": "fake", "IPINFO_API_KEY": "fake"}),
         patch("ipinfo.getHandler"),
@@ -363,8 +362,8 @@ def test_update_region_code_coordinates_full_mock(tmp_path: pathlib.Path) -> Non
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
 
-    # Create index_to_region.yaml with several region types
-    (ip_cache_dir / "index_to_region.yaml").write_text("1: 'US/California'\n2: 'AWS/us-east-1'\n3: 'bogon'\n")
+    # Create ip_to_region.yaml with several region types
+    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: 'US/California'\n192.0.2.2: 'AWS/us-east-1'\n192.0.2.3: 'bogon'\n")
 
     mock_ipinfo_client = MagicMock()
     mock_opencage_client = MagicMock()

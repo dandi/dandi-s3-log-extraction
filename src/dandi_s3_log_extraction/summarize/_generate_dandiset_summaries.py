@@ -78,7 +78,7 @@ def generate_dandiset_summaries(
     )
 
     ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
-        cache_type="index_to_region", cache_directory=cache_directory
+        cache_type="ip_to_region", cache_directory=cache_directory
     )
 
     if unassociated:
