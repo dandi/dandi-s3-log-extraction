@@ -4,7 +4,6 @@ import shutil
 
 import pandas
 import py
-import s3_log_extraction
 
 import dandi_s3_log_extraction
 
@@ -21,7 +20,9 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     test_summary_dir = test_dir / "summaries"
 
     shutil.copytree(src=expected_extraction_dir, dst=test_extraction_dir)
-    s3_log_extraction.ip_utils.index_ips(cache_directory=test_dir, seed=0)
+    ip_cache_dir = test_dir / "ips"
+    ip_cache_dir.mkdir(parents=True)
+    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.0: unknown\n")
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(cache_directory=test_dir, workers=1)
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(

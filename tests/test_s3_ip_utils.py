@@ -396,7 +396,7 @@ def test_update_region_code_coordinates_opencage_failure(tmp_path: pathlib.Path)
     """update_region_code_coordinates prints message when OpenCage returns no results."""
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "index_to_region.yaml").write_text("1: 'XX/UnknownRegion'\n")
+    (ip_cache_dir / "ip_to_region.yaml").write_text("1: 'XX/UnknownRegion'\n")
 
     mock_opencage_client = MagicMock()
     mock_opencage_client.geocode.return_value = []  # empty → failure

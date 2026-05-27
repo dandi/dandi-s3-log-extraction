@@ -25,26 +25,26 @@ def test_generate_summaries_with_data(tmp_path: pathlib.Path) -> None:
     """generate_summaries processes datasets with a mix of asset types."""
     extraction_dir = tmp_path / "extraction"
 
-    # dataset1: asset1 has all 3 files; asset2 has only bytes_sent (no timestamps, no indexed_ips)
+    # dataset1: asset1 has all 3 files; asset2 has only bytes_sent (no timestamps, no full_ips)
     asset1 = extraction_dir / "dataset1" / "asset1"
     asset1.mkdir(parents=True)
     # YYMMDDHHMMSS format: 200101050635 → 2020-01-01
     (asset1 / "timestamps.txt").write_text("200101050635\n200101224258\n")
     (asset1 / "bytes_sent.txt").write_text("512\n1526223\n")
-    (asset1 / "indexed_ips.txt").write_text("192.0.2.1\n192.0.2.2\n")
+    (asset1 / "full_ips.txt").write_text("192.0.2.1\n192.0.2.2\n")
 
     asset2 = extraction_dir / "dataset1" / "asset2_no_ts"
     asset2.mkdir(parents=True)
     (asset2 / "bytes_sent.txt").write_text("100\n")
     # No timestamps.txt → exercises continue in _summarize_dataset_by_day
-    # No indexed_ips.txt → exercises continue in _summarize_dataset_by_region
+    # No full_ips.txt → exercises continue in _summarize_dataset_by_region
 
     # dataset2: all assets have only bytes_sent.txt → day/region summary early return
     asset3 = extraction_dir / "dataset2" / "asset3"
     asset3.mkdir(parents=True)
     (asset3 / "bytes_sent.txt").write_text("200\n")
     # No timestamps.txt → summarized_activity_by_day stays empty → early return at line 111-112
-    # No indexed_ips.txt → summarized_activity_by_region stays empty → early return at line 182-183
+    # No full_ips.txt → summarized_activity_by_region stays empty → early return at line 286-287
 
     # Set up ip_to_region cache
     ip_cache_dir = tmp_path / "ips"
