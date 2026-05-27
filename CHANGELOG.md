@@ -2,6 +2,10 @@
 
 # Upcoming
 
+### 🔩 Dependency Updates
+
+- Updated the `s3-log-extraction` dependency to upstream commit `3a9b2c3527462bea440f65f9eae02d2775f7f163` so the current IP utils module layout is available ([#66](https://github.com/stamped-principles/stamped-checklist/pull/66))
+
 ## Improvements
 
 Refactored `generate_dandiset_totals` to accept `cache_directory` instead of `summary_directory`. The summary directory is now derived internally as `cache_directory / "summaries"`, consistent with `generate_dandiset_summaries`. The CLI `dandis3logextraction update totals` now passes `cache_directory` directly to `generate_dandiset_totals`.
