@@ -77,9 +77,7 @@ def generate_dandiset_summaries(
         "refs/heads/min/derivatives/content_id_to_usage_dandiset_path.min.json.gz"
     )
 
-    index_to_region = s3_log_extraction.ip_utils.load_ip_cache(
-        cache_type="index_to_region", cache_directory=cache_directory
-    )
+    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="ip_to_region", cache_directory=cache_directory)
 
     if unassociated:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(
@@ -93,7 +91,7 @@ def generate_dandiset_summaries(
             dandiset_id=dandiset_id,
             blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
             summary_directory=summary_directory,
-            index_to_region=index_to_region,
+            ip_to_region=ip_to_region,
             blob_id_to_asset_path=content_id_to_dandiset_path,
         )
     else:
@@ -132,7 +130,7 @@ def generate_dandiset_summaries(
                     dandiset_id=dandiset_id,
                     blob_directories=blob_directories,
                     summary_directory=summary_directory,
-                    index_to_region=index_to_region,
+                    ip_to_region=ip_to_region,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
                 )
         else:
@@ -143,7 +141,7 @@ def generate_dandiset_summaries(
                         dandiset_id=dandiset_id,
                         blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
                         summary_directory=summary_directory,
-                        index_to_region=index_to_region,
+                        ip_to_region=ip_to_region,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
@@ -278,7 +276,7 @@ def _summarize_dandiset(
     dandiset_id: str,
     blob_directories: list[pathlib.Path],
     summary_directory: pathlib.Path,
-    index_to_region: dict[int, str],
+    ip_to_region: dict[str, str],
     blob_id_to_asset_path: dict[str, str],
 ) -> None:
     _summarize_dandiset_by_day(
@@ -302,7 +300,7 @@ def _summarize_dandiset(
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
-        index_to_region=index_to_region,
+        ip_to_region=ip_to_region,
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
@@ -594,7 +592,7 @@ def _summarize_dandiset_by_asset(
 
 
 def _summarize_dandiset_by_region(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, index_to_region: dict[int, str]
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, ip_to_region: dict[str, str]
 ) -> None:
     all_regions = []
     all_bytes_sent = []
@@ -606,8 +604,8 @@ def _summarize_dandiset_by_region(
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
 
         indexed_ips_file_path = blob_directory / "indexed_ips.txt"
-        indexed_ips = [int(ip_index.strip()) for ip_index in indexed_ips_file_path.read_text().splitlines()]
-        regions = [index_to_region.get(ip_index, "unknown") for ip_index in indexed_ips]
+        ips = [ip.strip() for ip in indexed_ips_file_path.read_text().splitlines()]
+        regions = [ip_to_region.get(ip, "unknown") for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
@@ -664,9 +662,9 @@ def _round_requester_count(count: int, modulo: int, minimum: int) -> str | int:
     return round(count / modulo) * modulo
 
 
-def _collect_unique_ip_indexes(blob_directories: list[pathlib.Path]) -> set[str]:
+def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
     """
-    Collect all unique IP indexes across the given blob directories.
+    Collect all unique IPs across the given blob directories.
 
     Parameters
     ----------
@@ -676,9 +674,9 @@ def _collect_unique_ip_indexes(blob_directories: list[pathlib.Path]) -> set[str]
     Returns
     -------
     set of str
-        The set of unique IP index strings found across all ``indexed_ips.txt`` files.
+        The set of unique IP strings found across all ``indexed_ips.txt`` files.
     """
-    unique_ip_indexes: set[str] = set()
+    unique_ips: set[str] = set()
     for blob_directory in blob_directories:
         if not blob_directory.exists():
             continue
@@ -687,8 +685,8 @@ def _collect_unique_ip_indexes(blob_directories: list[pathlib.Path]) -> set[str]
         if not indexed_ips_file_path.exists():
             continue
 
-        unique_ip_indexes.update(ip.strip() for ip in indexed_ips_file_path.read_text().splitlines())
-    return unique_ip_indexes
+        unique_ips.update(ip.strip() for ip in indexed_ips_file_path.read_text().splitlines())
+    return unique_ips
 
 
 def _summarize_dandiset_unique_requester_count(
@@ -702,7 +700,7 @@ def _summarize_dandiset_unique_requester_count(
     Compute and save the privacy-rounded unique requester count for a Dandiset.
 
     Reads all ``indexed_ips.txt`` files from the given blob directories, counts the
-    number of unique IP indexes across the entire Dandiset, rounds the result via
+    number of unique IPs across the entire Dandiset, rounds the result via
     :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
 
     Parameters
@@ -717,12 +715,12 @@ def _summarize_dandiset_unique_requester_count(
         Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
         Default is ``50``.
     """
-    unique_ip_indexes = _collect_unique_ip_indexes(blob_directories=blob_directories)
+    unique_ips = _collect_unique_ips(blob_directories=blob_directories)
 
-    if not unique_ip_indexes:
+    if not unique_ips:
         return
 
-    rounded_count = _round_requester_count(count=len(unique_ip_indexes), modulo=modulo, minimum=minimum)
+    rounded_count = _round_requester_count(count=len(unique_ips), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     summary_file_path.write_text(str(rounded_count))
 
@@ -737,7 +735,7 @@ def _summarize_archive_unique_requester_count(
     """
     Compute and save the privacy-rounded unique requester count for the archive.
 
-    Collects unique IP indexes across all provided blob directories (a true union
+    Collects unique IPs across all provided blob directories (a true union
     across all Dandisets), rounds the result, and writes the value to ``summary_file_path``.
 
     Parameters
@@ -752,11 +750,11 @@ def _summarize_archive_unique_requester_count(
         Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
         Default is ``50``.
     """
-    unique_ip_indexes = _collect_unique_ip_indexes(blob_directories=blob_directories)
+    unique_ips = _collect_unique_ips(blob_directories=blob_directories)
 
-    if not unique_ip_indexes:
+    if not unique_ips:
         return
 
-    rounded_count = _round_requester_count(count=len(unique_ip_indexes), modulo=modulo, minimum=minimum)
+    rounded_count = _round_requester_count(count=len(unique_ips), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     summary_file_path.write_text(str(rounded_count))

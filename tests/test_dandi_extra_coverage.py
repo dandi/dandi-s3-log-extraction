@@ -14,7 +14,7 @@ import dandi_s3_log_extraction
 import dandi_s3_log_extraction.summarize
 from dandi_s3_log_extraction._parallel._utils import _handle_max_workers
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
-    _collect_unique_ip_indexes,
+    _collect_unique_ips,
     _round_requester_count,
     _summarize_archive_by_asset_type_per_week,
     _summarize_archive_unique_requester_count,
@@ -355,15 +355,15 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     """_summarize_dandiset_by_region includes number_of_requests column with correct counts."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("1\n2\n1\n")
+    (blob_dir / "indexed_ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
     (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
 
-    index_to_region = {1: "US/California", 2: "US/New York"}
+    ip_to_region = {"192.0.2.1": "US/California", "192.0.2.2": "US/New York"}
     summary_file_path = tmp_path / "by_region.tsv"
     _summarize_dandiset_by_region(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        index_to_region=index_to_region,
+        ip_to_region=ip_to_region,
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
@@ -408,40 +408,40 @@ def test_round_requester_count(count: int, modulo: int, minimum: int, expected: 
     assert _round_requester_count(count=count, modulo=modulo, minimum=minimum) == expected
 
 
-# ─── _collect_unique_ip_indexes ──────────────────────────────────────────────
+# ─── _collect_unique_ips ─────────────────────────────────────────────────────
 
 
 @pytest.mark.ai_generated
-def test_collect_unique_ip_indexes_basic(tmp_path: pathlib.Path) -> None:
-    """_collect_unique_ip_indexes returns the union of IP indices across all blob directories."""
+def test_collect_unique_ips_basic(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ips returns the union of IPs across all blob directories."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("10\n20\n10\n")
+    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("20\n30\n")
+    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
 
-    result = _collect_unique_ip_indexes(blob_directories=[blob_dir1, blob_dir2])
-    assert result == {"10", "20", "30"}
+    result = _collect_unique_ips(blob_directories=[blob_dir1, blob_dir2])
+    assert result == {"192.0.2.10", "192.0.2.20", "192.0.2.30"}
 
 
 @pytest.mark.ai_generated
-def test_collect_unique_ip_indexes_missing_file(tmp_path: pathlib.Path) -> None:
-    """_collect_unique_ip_indexes skips directories without indexed_ips.txt."""
+def test_collect_unique_ips_missing_file(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ips skips directories without indexed_ips.txt."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
     # No indexed_ips.txt
 
-    result = _collect_unique_ip_indexes(blob_directories=[blob_dir])
+    result = _collect_unique_ips(blob_directories=[blob_dir])
     assert result == set()
 
 
 @pytest.mark.ai_generated
-def test_collect_unique_ip_indexes_missing_dir(tmp_path: pathlib.Path) -> None:
-    """_collect_unique_ip_indexes skips non-existent directories."""
+def test_collect_unique_ips_missing_dir(tmp_path: pathlib.Path) -> None:
+    """_collect_unique_ips skips non-existent directories."""
     missing_dir = tmp_path / "nonexistent"
-    result = _collect_unique_ip_indexes(blob_directories=[missing_dir])
+    result = _collect_unique_ips(blob_directories=[missing_dir])
     assert result == set()
 
 
@@ -453,7 +453,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_p
     """_summarize_dandiset_unique_requester_count writes the sentinel when count < minimum."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("10\n20\n10\n")  # 2 unique IPs < 50 minimum
+    (blob_dir / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -470,7 +470,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
     # 55 unique IPs → >= 50 minimum → rounded to nearest 20 = 60
-    unique_ips = "\n".join(str(i) for i in range(55))
+    unique_ips = "\n".join(f"192.0.2.{i}" for i in range(55))
     (blob_dir / "indexed_ips.txt").write_text(unique_ips)
 
     summary_file_path = tmp_path / "requester_count.tsv"
@@ -520,11 +520,11 @@ def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.P
     """_summarize_archive_unique_requester_count computes true union of IPs across all blobs."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("10\n20\n")
+    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("20\n30\n")  # 20 is shared
+    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")  # 192.0.2.20 is shared
 
     archive_file = tmp_path / "archive" / "requester_count.tsv"
     _summarize_archive_unique_requester_count(
@@ -532,7 +532,7 @@ def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.P
         summary_file_path=archive_file,
     )
 
-    # 3 unique IPs (10, 20, 30) → all < 50 → sentinel
+    # 3 unique IPs (192.0.2.10, 192.0.2.20, 192.0.2.30) → all < 50 → sentinel
     assert archive_file.read_text() == "<50"
 
 
