@@ -26,15 +26,14 @@
 
 # v0.0.5
 
-## Improvements
+### 🚀 Enhancement
 
-Added `number_of_requests` column to `by_day.tsv`, `by_asset.tsv`, and `by_region.tsv` summaries.
-This counts the number of S3 log lines (requests) per grouping (date, asset, or region).
+- Added `number_of_requests` column to `by_day.tsv`, `by_asset.tsv`, and `by_region.tsv` summaries. This counts the number of S3 log lines per grouping. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 
 
 # v0.01
 
-## Improvements
+### 🏠 Internal
 
-Package was untangled from the parent `s3-log-extraction`.
+- Package was untangled from the parent `s3-log-extraction`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
