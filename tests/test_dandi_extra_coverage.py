@@ -358,12 +358,12 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     (blob_dir / "indexed_ips.txt").write_text("1.2.3.1\n1.2.3.2\n1.2.3.1\n")
     (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
 
-    index_to_region = {"1.2.3.1": "US/California", "1.2.3.2": "US/New York"}
+    ip_to_region = {"1.2.3.1": "US/California", "1.2.3.2": "US/New York"}
     summary_file_path = tmp_path / "by_region.tsv"
     _summarize_dandiset_by_region(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        index_to_region=index_to_region,
+        ip_to_region=ip_to_region,
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)

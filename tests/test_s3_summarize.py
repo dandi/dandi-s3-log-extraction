@@ -120,7 +120,7 @@ def test_summarize_dataset_by_region_empty_result(tmp_path: pathlib.Path) -> Non
     _summarize_dataset_by_region(
         asset_directories=[asset_dir],
         summary_file_path=summary_file_path,
-        index_to_region={},
+        ip_to_region={},
     )
 
     assert not summary_file_path.exists()

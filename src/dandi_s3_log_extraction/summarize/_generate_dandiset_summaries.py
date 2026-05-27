@@ -77,7 +77,7 @@ def generate_dandiset_summaries(
         "refs/heads/min/derivatives/content_id_to_usage_dandiset_path.min.json.gz"
     )
 
-    index_to_region = s3_log_extraction.ip_utils.load_ip_cache(
+    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
         cache_type="index_to_region", cache_directory=cache_directory
     )
 
@@ -93,7 +93,7 @@ def generate_dandiset_summaries(
             dandiset_id=dandiset_id,
             blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
             summary_directory=summary_directory,
-            index_to_region=index_to_region,
+            ip_to_region=ip_to_region,
             blob_id_to_asset_path=content_id_to_dandiset_path,
         )
     else:
@@ -132,7 +132,7 @@ def generate_dandiset_summaries(
                     dandiset_id=dandiset_id,
                     blob_directories=blob_directories,
                     summary_directory=summary_directory,
-                    index_to_region=index_to_region,
+                    ip_to_region=ip_to_region,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
                 )
         else:
@@ -143,7 +143,7 @@ def generate_dandiset_summaries(
                         dandiset_id=dandiset_id,
                         blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
                         summary_directory=summary_directory,
-                        index_to_region=index_to_region,
+                        ip_to_region=ip_to_region,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
@@ -278,7 +278,7 @@ def _summarize_dandiset(
     dandiset_id: str,
     blob_directories: list[pathlib.Path],
     summary_directory: pathlib.Path,
-    index_to_region: dict[str, str],
+    ip_to_region: dict[str, str],
     blob_id_to_asset_path: dict[str, str],
 ) -> None:
     _summarize_dandiset_by_day(
@@ -302,7 +302,7 @@ def _summarize_dandiset(
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
-        index_to_region=index_to_region,
+        ip_to_region=ip_to_region,
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
@@ -594,7 +594,7 @@ def _summarize_dandiset_by_asset(
 
 
 def _summarize_dandiset_by_region(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, index_to_region: dict[str, str]
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, ip_to_region: dict[str, str]
 ) -> None:
     all_regions = []
     all_bytes_sent = []
@@ -607,7 +607,7 @@ def _summarize_dandiset_by_region(
 
         indexed_ips_file_path = blob_directory / "indexed_ips.txt"
         ips = [ip.strip() for ip in indexed_ips_file_path.read_text().splitlines()]
-        regions = [index_to_region.get(ip, "unknown") for ip in ips]
+        regions = [ip_to_region.get(ip, "unknown") for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
