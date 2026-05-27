@@ -2,46 +2,27 @@
 
 # Upcoming
 
+### 🚀 Enhancement
+
+- Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Added `--cache-directory` to `dandis3logextraction extract` so remote extraction can use a custom cache directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Added `--inventory` to `dandis3logextraction extract --mode remote` so extraction can use a local S3 Inventory directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Added `--directory` to `dandis3logextraction update summaries` and `dandis3logextraction update totals` for cache directory selection. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Added `number_of_requesters` to Dandiset and archive summaries. Counts below 50 are reported as `"<50"`, and higher counts are rounded to the nearest multiple of 20. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Refactored `generate_dandiset_totals` to derive the summary directory from `cache_directory`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Renamed the `--directory` CLI flag to `--cache` in the update commands. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+
 ### 🔩 Dependency Updates
 
-- Updated the `s3-log-extraction` dependency to upstream commit `3a9b2c3527462bea440f65f9eae02d2775f7f163` so the current IP utils module layout is available ([#66](https://github.com/stamped-principles/stamped-checklist/pull/66))
+- Updated the `s3-log-extraction` dependency to upstream commit `3a9b2c3527462bea440f65f9eae02d2775f7f163` so the current IP utils module layout is available. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Updated compatibility for the latest `s3-log-extraction` release by pinning the lower bound to `>=1.9.2` and adapting extractor tests and summary columns. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
-## Improvements
+### 🏠 Internal
 
-Refactored `generate_dandiset_totals` to accept `cache_directory` instead of `summary_directory`. The summary directory is now derived internally as `cache_directory / "summaries"`, consistent with `generate_dandiset_summaries`. The CLI `dandis3logextraction update totals` now passes `cache_directory` directly to `generate_dandiset_totals`.
-
-Renamed `--directory` CLI flag to `--cache` in both `dandis3logextraction update summaries` and `dandis3logextraction update totals` for consistency with the `extract` command's `--cache` flag.
-
-Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions.
-
-Updated compatibility for latest `s3-log-extraction` by pinning the lower bound to `>=1.9.2` and adapting extractor/tests to current upstream APIs and summary columns.
-
-## Removals
-
-Removed the database bundling tools (`bundle_database` function, `dandis3logextraction update database` CLI command, and `database` submodule). These are retired in favor of restic snapshots as the external sharing layer. The `sharing` optional dependency group (which provided `polars`) has also been removed.
-
-Removed the `--manifest` CLI option and `manifest_file_path` parameter from `dandis3logextraction extract`. The manifest file feature remains available in the upstream `s3-log-extraction` package for users who need it, but is no longer exposed by this DANDI-specific plugin.
-
-`DandiS3LogAccessExtractor` now raises `NotImplementedError` to indicate that this package only supports the remote extractor. Use `DandiRemoteS3LogAccessExtractor` instead. The CLI modes `dandi` and `dandi-remote` similarly raise `NotImplementedError`; use `--mode remote` for all extraction.
-
-## Features
-
-Added `download` field to the GAWK extraction step in `_dandi_extraction.awk`. The value is `1` when the HTTP status is exactly `200` (complete transfer) and `0` for all other 2xx codes (e.g. `206` partial). Values are stored in `download.txt` alongside `timestamps.txt`, `bytes_sent.txt`, and `full_ips.txt`.
-
-Added `--cache-directory` CLI flag to `dandis3logextraction extract`, exposing the `cache_directory` parameter on `DandiRemoteS3LogAccessExtractor`. When provided, the specified directory is used as the cache for the extraction run instead of the default configured cache directory.
-
-Added `--inventory` CLI flag to `dandis3logextraction extract --mode remote`, exposing the upstream `inventory_directory` parameter on `DandiRemoteS3LogAccessExtractor.extract_s3_bucket`. When provided, unprocessed log files are discovered from a pre-downloaded local AWS S3 Inventory directory instead of performing live `s5cmd ls` calls against the bucket.
-
-Added `--directory` CLI option to both `dandis3logextraction update summaries` and `dandis3logextraction update totals`, mapping to the `cache_directory` parameter. For `update summaries`, it is passed directly as `cache_directory`. For `update totals`, the CLI derives `summary_directory = cache_directory / "summaries"` internally.
-
-Added `number_of_requesters` field to Dandiset and archive level summaries. The count of unique requesters
-(unique IP indices) per Dandiset is computed during summarization and written to `requester_count.tsv` per
-Dandiset. For privacy protection, counts below the minimum threshold (50) are reported as the sentinel
-string `"<50"`, while counts at or above the threshold are rounded to the nearest multiple of 20.
-The archive-level count is a true union of all unique IP indices across all Dandisets. The
-`generate_dandiset_totals` function reads these values and emits `number_of_requesters` in `totals.json`
-for each Dandiset and for the archive. The unique requester count is intentionally not coupled to region
-information and is not reported at the per-asset level.
+- Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Removed the database bundling tools. That includes `bundle_database`, `dandis3logextraction update database`, and the `database` submodule. The `sharing` optional dependency group was also removed. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Removed the `--manifest` CLI option and `manifest_file_path` from `dandis3logextraction extract`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- `DandiS3LogAccessExtractor` and the `dandi` and `dandi-remote` CLI modes now raise `NotImplementedError`. Use `DandiRemoteS3LogAccessExtractor` and `--mode remote` instead. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 # v0.0.5
 
