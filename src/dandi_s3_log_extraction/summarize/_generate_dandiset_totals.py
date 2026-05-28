@@ -3,6 +3,7 @@ import pathlib
 
 import pandas
 import s3_log_extraction
+import s3_log_extraction.ip_utils
 from beartype import beartype
 
 
@@ -39,7 +40,7 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
 
         unique_countries = dict()
         for region in summary["region"]:
-            if region in ["VPN", "GitHub", "unknown", "undetermined", "missing"]:
+            if region in s3_log_extraction.ip_utils.EXCLUDED_REGION_LABELS:
                 continue
 
             region_split = region.split("/")

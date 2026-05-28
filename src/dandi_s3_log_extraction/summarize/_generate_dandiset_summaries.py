@@ -6,7 +6,6 @@ import itertools
 import json
 import pathlib
 
-import natsort
 import pandas
 import requests
 import s3_log_extraction
@@ -164,21 +163,6 @@ def generate_dandiset_summaries(
                     ),
                     maxlen=0,
                 )
-
-    # _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
-    # _summarize_archive_by_day(summary_directory=summary_directory)
-    # _summarize_archive_by_region(summary_directory=summary_directory)
-
-    # if unassociated:
-    #     all_blob_directories_for_archive = dandiset_id_to_local_content_directories.get("undetermined", [])
-    # else:
-    #     all_blob_directories_for_archive = []
-    #     for dandiset_id in dandiset_ids_to_summarize:
-    #         all_blob_directories_for_archive.extend(dandiset_id_to_local_content_directories.get(dandiset_id, []))
-    # _summarize_archive_unique_requester_count(
-    #     blob_directories=all_blob_directories_for_archive,
-    #     summary_file_path=summary_directory / "archive" / "requester_count.tsv",
-    # )
 
 
 def _get_determinable_dandi_asset_info(
@@ -524,50 +508,6 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
     archive_summary.sort_values(by="week_start", inplace=True)
 
     archive_summary_file_path = summary_directory / "archive" / "by_asset_type_per_week.tsv"
-    archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
-    archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
-
-
-def _summarize_archive_by_day(*, summary_directory: pathlib.Path) -> None:
-    _summarize_archive_by_grouped_column(
-        summary_directory=summary_directory,
-        tsv_name="by_day.tsv",
-        group_column="date",
-    )
-
-
-def _summarize_archive_by_region(*, summary_directory: pathlib.Path) -> None:
-    _summarize_archive_by_grouped_column(
-        summary_directory=summary_directory,
-        tsv_name="by_region.tsv",
-        group_column="region",
-    )
-
-
-def _summarize_archive_by_grouped_column(*, summary_directory: pathlib.Path, tsv_name: str, group_column: str) -> None:
-    all_summaries = [
-        pandas.read_table(filepath_or_buffer=summary_file_path)
-        for summary_file_path in summary_directory.rglob(pattern=tsv_name)
-        if summary_file_path.parent.name != "archive"
-    ]
-    if not all_summaries:
-        return
-
-    all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
-
-    archive_summary = (
-        all_summary_data.groupby(by=group_column, as_index=False)[
-            ["bytes_sent", "number_of_requests", "number_of_downloads"]
-        ]
-        .sum()
-        .reindex(columns=[group_column, "bytes_sent", "number_of_requests", "number_of_downloads"])
-    )
-    archive_summary = archive_summary.astype(
-        dtype={"bytes_sent": "int64", "number_of_requests": "int64", "number_of_downloads": "int64"}
-    )
-    archive_summary.sort_values(by=group_column, key=natsort.natsort_keygen(), inplace=True)
-
-    archive_summary_file_path = summary_directory / "archive" / tsv_name
     archive_summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     archive_summary.to_csv(path_or_buf=archive_summary_file_path, mode="w", sep="\t", header=True, index=False)
 
