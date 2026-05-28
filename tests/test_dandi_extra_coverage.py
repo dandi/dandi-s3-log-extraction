@@ -70,6 +70,7 @@ def test_dandi_remote_extractor_init(tmp_path: pathlib.Path) -> None:
     assert extractor._relative_script_path.exists()
     assert "IPS_TO_SKIP_REGEX" in extractor._awk_env
     assert len(extractor._awk_env["IPS_TO_SKIP_REGEX"]) > 0
+    assert extractor.use_encryption is False
 
 
 # ─── generate_dandiset_summaries error cases ─────────────────────────────────
@@ -264,7 +265,9 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     # A valid dandiset directory with data
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir()
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv = pandas.DataFrame(
+        {"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3], "number_of_downloads": [2]}
+    )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
@@ -273,6 +276,7 @@ def test_generate_dandiset_totals_non_dir_item(tmp_path: pathlib.Path) -> None:
     assert "000001" in totals
     assert "some_file" not in totals
     assert totals["000001"]["total_number_of_requests"] == 3
+    assert totals["000001"]["total_number_of_downloads"] == 2
 
 
 @pytest.mark.ai_generated
@@ -291,6 +295,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
             "region": ["VPN", "GitHub", "unknown", "US/California", "AWS/eu-west-1"],
             "bytes_sent": [100, 200, 300, 400, 500],
             "number_of_requests": [1, 2, 3, 4, 5],
+            "number_of_downloads": [0, 1, 1, 3, 4],
         }
     )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
@@ -303,6 +308,7 @@ def test_generate_dandiset_totals_various_regions(tmp_path: pathlib.Path) -> Non
     # US/California → "US", AWS/eu-west-1 → "EU" (via AWS logic)
     assert totals["000001"]["number_of_unique_countries"] == 2
     assert totals["000001"]["total_number_of_requests"] == 15
+    assert totals["000001"]["total_number_of_downloads"] == 9
 
 
 # ─── number_of_requests column ───────────────────────────────────────────────
@@ -315,18 +321,22 @@ def test_summarize_dandiset_by_day_number_of_requests(tmp_path: pathlib.Path) ->
     blob_dir.mkdir()
     (blob_dir / "timestamps.txt").write_text("200101050635\n200101224258\n200109050635\n")
     (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
+    (blob_dir / "download.txt").write_text("1\n0\n1\n")
 
     summary_file_path = tmp_path / "by_day.tsv"
     _summarize_dandiset_by_day(blob_directories=[blob_dir], summary_file_path=summary_file_path)
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
     assert "number_of_requests" in result.columns
+    assert "number_of_downloads" in result.columns
     row_2020_01_01 = result[result["date"] == "2020-01-01"].iloc[0]
     assert row_2020_01_01["bytes_sent"] == 300
     assert row_2020_01_01["number_of_requests"] == 2
+    assert row_2020_01_01["number_of_downloads"] == 1
     row_2020_01_09 = result[result["date"] == "2020-01-09"].iloc[0]
     assert row_2020_01_09["bytes_sent"] == 300
     assert row_2020_01_09["number_of_requests"] == 1
+    assert row_2020_01_09["number_of_downloads"] == 1
 
 
 @pytest.mark.ai_generated
@@ -335,6 +345,7 @@ def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) 
     blob_dir = tmp_path / "blobid1"
     blob_dir.mkdir()
     (blob_dir / "bytes_sent.txt").write_text("512\n1024\n256\n")
+    (blob_dir / "download.txt").write_text("1\n0\n1\n")
 
     blob_id_to_asset_path = {"blobid1": "path/to/asset.nwb"}
     summary_file_path = tmp_path / "by_asset.tsv"
@@ -346,8 +357,10 @@ def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) 
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
     assert "number_of_requests" in result.columns
+    assert "number_of_downloads" in result.columns
     assert result.iloc[0]["bytes_sent"] == 1792
     assert result.iloc[0]["number_of_requests"] == 3
+    assert result.iloc[0]["number_of_downloads"] == 2
 
 
 @pytest.mark.ai_generated
@@ -355,8 +368,9 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     """_summarize_dandiset_by_region includes number_of_requests column with correct counts."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
+    (blob_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
     (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
+    (blob_dir / "download.txt").write_text("1\n0\n1\n")
 
     ip_to_region = {"192.0.2.1": "US/California", "192.0.2.2": "US/New York"}
     summary_file_path = tmp_path / "by_region.tsv"
@@ -368,12 +382,15 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
     assert "number_of_requests" in result.columns
+    assert "number_of_downloads" in result.columns
     ca_row = result[result["region"] == "US/California"].iloc[0]
     assert ca_row["bytes_sent"] == 400
     assert ca_row["number_of_requests"] == 2
+    assert ca_row["number_of_downloads"] == 2
     ny_row = result[result["region"] == "US/New York"].iloc[0]
     assert ny_row["bytes_sent"] == 200
     assert ny_row["number_of_requests"] == 1
+    assert ny_row["number_of_downloads"] == 0
 
 
 # ─── _round_requester_count ───────────────────────────────────────────────────
@@ -416,11 +433,11 @@ def test_collect_unique_ips_basic(tmp_path: pathlib.Path) -> None:
     """_collect_unique_ips returns the union of IPs across all blob directories."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")
+    (blob_dir1 / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
+    (blob_dir2 / "ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
 
     result = _collect_unique_ips(blob_directories=[blob_dir1, blob_dir2])
     assert result == {"192.0.2.10", "192.0.2.20", "192.0.2.30"}
@@ -428,10 +445,10 @@ def test_collect_unique_ips_basic(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_collect_unique_ips_missing_file(tmp_path: pathlib.Path) -> None:
-    """_collect_unique_ips skips directories without indexed_ips.txt."""
+    """_collect_unique_ips skips directories without ips.txt."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # No indexed_ips.txt
+    # No ips.txt
 
     result = _collect_unique_ips(blob_directories=[blob_dir])
     assert result == set()
@@ -453,7 +470,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_p
     """_summarize_dandiset_unique_requester_count writes the sentinel when count < minimum."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
+    (blob_dir / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -471,7 +488,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
     blob_dir.mkdir()
     # 55 unique IPs → >= 50 minimum → rounded to nearest 20 = 60
     unique_ips = "\n".join(f"192.0.2.{i}" for i in range(55))
-    (blob_dir / "indexed_ips.txt").write_text(unique_ips)
+    (blob_dir / "ips.txt").write_text(unique_ips)
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -483,11 +500,11 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_unique_requester_count_no_indexed_ips(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_unique_requester_count returns early when no indexed_ips.txt exists."""
+def test_summarize_dandiset_unique_requester_count_no_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count returns early when no ips.txt exists."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # No indexed_ips.txt file
+    # No ips.txt file
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -520,11 +537,11 @@ def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.P
     """_summarize_archive_unique_requester_count computes true union of IPs across all blobs."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
+    (blob_dir1 / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")  # 192.0.2.20 is shared
+    (blob_dir2 / "ips.txt").write_text("192.0.2.20\n192.0.2.30\n")  # 192.0.2.20 is shared
 
     archive_file = tmp_path / "archive" / "requester_count.tsv"
     _summarize_archive_unique_requester_count(
@@ -558,7 +575,9 @@ def test_generate_dandiset_totals_includes_requesters_sentinel(tmp_path: pathlib
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir(parents=True)
 
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv = pandas.DataFrame(
+        {"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3], "number_of_downloads": [2]}
+    )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
     # sentinel written by _summarize_dandiset_unique_requester_count
@@ -577,7 +596,9 @@ def test_generate_dandiset_totals_includes_requesters_integer(tmp_path: pathlib.
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir(parents=True)
 
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv = pandas.DataFrame(
+        {"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3], "number_of_downloads": [2]}
+    )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
 
     (dandiset_dir / "requester_count.tsv").write_text("80")
@@ -595,7 +616,9 @@ def test_generate_dandiset_totals_missing_requesters_defaults_to_zero(tmp_path: 
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir(parents=True)
 
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3]})
+    region_tsv = pandas.DataFrame(
+        {"region": ["US/California"], "bytes_sent": [100], "number_of_requests": [3], "number_of_downloads": [2]}
+    )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
     # No requester_count.tsv
 
@@ -612,7 +635,9 @@ def test_generate_dandiset_totals_archive_requesters(tmp_path: pathlib.Path) -> 
     dandiset_dir = summary_dir / "000001"
     dandiset_dir.mkdir(parents=True)
 
-    region_tsv = pandas.DataFrame({"region": ["US/California"], "bytes_sent": [200], "number_of_requests": [5]})
+    region_tsv = pandas.DataFrame(
+        {"region": ["US/California"], "bytes_sent": [200], "number_of_requests": [5], "number_of_downloads": [4]}
+    )
     region_tsv.to_csv(path_or_buf=dandiset_dir / "by_region.tsv", sep="\t", index=False)
     (dandiset_dir / "requester_count.tsv").write_text("<50")
 
@@ -626,4 +651,5 @@ def test_generate_dandiset_totals_archive_requesters(tmp_path: pathlib.Path) -> 
     assert "archive" in totals
     assert totals["archive"]["total_bytes_sent"] == 200
     assert totals["archive"]["total_number_of_requests"] == 5
+    assert totals["archive"]["total_number_of_downloads"] == 4
     assert totals["archive"]["number_of_requesters"] == "<50"

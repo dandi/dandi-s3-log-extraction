@@ -51,7 +51,7 @@ def test_generate_summaries_with_data(tmp_path: pathlib.Path) -> None:
     ip_cache_dir.mkdir(parents=True)
     (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: 'US/California'\n192.0.2.2: 'unknown'\n")
 
-    s3_log_extraction.summarize.generate_summaries(cache_directory=tmp_path)
+    s3_log_extraction.summarize.generate_summaries(cache_directory=tmp_path, use_encryption=False)
 
     assert (tmp_path / "summaries" / "dataset1" / "by_day.tsv").exists()
     assert (tmp_path / "summaries" / "dataset1" / "by_asset.tsv").exists()

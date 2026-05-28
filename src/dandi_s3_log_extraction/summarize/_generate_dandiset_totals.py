@@ -65,6 +65,7 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
             "number_of_unique_regions": number_of_unique_regions,
             "number_of_unique_countries": number_of_unique_countries,
             "total_number_of_requests": int(summary["number_of_requests"].sum()),
+            "total_number_of_downloads": int(summary["number_of_downloads"].sum()),
             "number_of_requesters": number_of_requesters,
         }
 
@@ -81,6 +82,9 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
     archive_totals: dict[str, int | str] = {
         "total_bytes_sent": sum(entry["total_bytes_sent"] for entry in all_dandiset_totals.values()),
         "total_number_of_requests": sum(entry["total_number_of_requests"] for entry in all_dandiset_totals.values()),
+        "total_number_of_downloads": sum(
+            int(entry.get("total_number_of_downloads", 0)) for entry in all_dandiset_totals.values()
+        ),
         "number_of_requesters": archive_number_of_requesters,
     }
 

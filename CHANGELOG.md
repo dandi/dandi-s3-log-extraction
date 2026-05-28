@@ -9,12 +9,12 @@
 - Added `--inventory` to `dandis3logextraction extract --mode remote` so extraction can use a local S3 Inventory directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--directory` to `dandis3logextraction update summaries` and `dandis3logextraction update totals` for cache directory selection. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `number_of_requesters` to Dandiset and archive summaries. Counts below 50 are reported as `"<50"`, and higher counts are rounded to the nearest multiple of 20. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
+- Added `number_of_downloads` to Dandiset and archive `by_day.tsv`, `by_asset.tsv`, `by_region.tsv`, and `totals.json` outputs for parity with upstream summary conventions. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Refactored `generate_dandiset_totals` to derive the summary directory from `cache_directory`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Renamed the `--directory` CLI flag to `--cache` in the update commands. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 ### 🔩 Dependency Updates
 
-- Updated the `s3-log-extraction` dependency to upstream commit `3a9b2c3527462bea440f65f9eae02d2775f7f163` so the current IP utils module layout is available. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Updated compatibility for the latest `s3-log-extraction` release by pinning the lower bound to `>=1.9.2` and adapting extractor tests and summary columns. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 ### 🏠 Internal

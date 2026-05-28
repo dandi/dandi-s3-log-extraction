@@ -26,7 +26,7 @@ class DandiRemoteS3LogAccessExtractor(s3_log_extraction.extractors.RemoteS3LogAc
     """
 
     def __init__(self, cache_directory: pathlib.Path | None = None) -> None:
-        super().__init__(cache_directory=cache_directory)
+        super().__init__(cache_directory=cache_directory, use_encryption=False)
 
         self._relative_script_path = pathlib.Path(__file__).parent / "_dandi_extraction.awk"
 

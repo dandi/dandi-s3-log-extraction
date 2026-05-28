@@ -1,2 +1,2 @@
-date	bytes_sent	number_of_requests
-2020-01-01	1526223	1
+date	bytes_sent	number_of_requests	number_of_downloads
+2020-01-01	1526223	1	1

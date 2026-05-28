@@ -276,7 +276,6 @@ def _update_totals_cli(
     """Generate grand totals of all extracted data."""
     match mode:
         case "archive":
-            summary_directory = pathlib.Path(cache_directory) / "summaries" if cache_directory is not None else None
-            s3_log_extraction.summarize.generate_archive_totals(summary_directory)
+            s3_log_extraction.summarize.generate_archive_totals(cache_directory=cache_directory)
         case _:
             generate_dandiset_totals(cache_directory=cache_directory)

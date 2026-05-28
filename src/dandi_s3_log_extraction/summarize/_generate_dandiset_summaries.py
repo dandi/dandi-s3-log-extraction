@@ -77,7 +77,9 @@ def generate_dandiset_summaries(
         "refs/heads/min/derivatives/content_id_to_usage_dandiset_path.min.json.gz"
     )
 
-    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="ip_to_region", cache_directory=cache_directory)
+    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
+        cache_type="ip_to_region", cache_directory=cache_directory, use_encryption=False
+    )
 
     if unassociated:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(
@@ -240,7 +242,7 @@ def _get_undetermined_dandi_asset_info(
     # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
     batch_size = 1_000_000
     tqdm_iterable = tqdm.tqdm(
-        iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="full_ips.txt"), n=batch_size),
+        iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="ips.txt"), n=batch_size),
         total=0,
         desc="Mapping undetermined blob IDs to local paths",
         unit="batches",
@@ -311,6 +313,7 @@ def _summarize_dandiset(
 def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path) -> None:
     all_dates = []
     all_bytes_sent = []
+    all_downloads = []
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
@@ -329,11 +332,21 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
         all_bytes_sent.extend(bytes_sent)
 
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(dates)
+        )
+        all_downloads.extend(downloads)
+
     summarized_activity_by_day = collections.defaultdict(int)
     number_of_requests_by_day = collections.defaultdict(int)
-    for date, bytes_sent in zip(all_dates, all_bytes_sent):
+    number_of_downloads_by_day = collections.defaultdict(int)
+    for date, bytes_sent, download in zip(all_dates, all_bytes_sent, all_downloads):
         summarized_activity_by_day[date] += bytes_sent
         number_of_requests_by_day[date] += 1
+        number_of_downloads_by_day[date] += download
 
     if len(summarized_activity_by_day) == 0:
         return
@@ -345,6 +358,7 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
             "date": all_dates_ordered,
             "bytes_sent": list(summarized_activity_by_day.values()),
             "number_of_requests": [number_of_requests_by_day[date] for date in all_dates_ordered],
+            "number_of_downloads": [number_of_downloads_by_day[date] for date in all_dates_ordered],
         }
     )
     summary_table.sort_values(by="date", inplace=True)
@@ -542,11 +556,15 @@ def _summarize_archive_by_grouped_column(*, summary_directory: pathlib.Path, tsv
     all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
 
     archive_summary = (
-        all_summary_data.groupby(by=group_column, as_index=False)[["bytes_sent", "number_of_requests"]]
+        all_summary_data.groupby(by=group_column, as_index=False)[
+            ["bytes_sent", "number_of_requests", "number_of_downloads"]
+        ]
         .sum()
-        .reindex(columns=[group_column, "bytes_sent", "number_of_requests"])
+        .reindex(columns=[group_column, "bytes_sent", "number_of_requests", "number_of_downloads"])
     )
-    archive_summary = archive_summary.astype(dtype={"bytes_sent": "int64", "number_of_requests": "int64"})
+    archive_summary = archive_summary.astype(
+        dtype={"bytes_sent": "int64", "number_of_requests": "int64", "number_of_downloads": "int64"}
+    )
     archive_summary.sort_values(by=group_column, key=natsort.natsort_keygen(), inplace=True)
 
     archive_summary_file_path = summary_directory / "archive" / tsv_name
@@ -559,6 +577,7 @@ def _summarize_dandiset_by_asset(
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
+    number_of_downloads_by_asset = collections.defaultdict(int)
     for blob_directory in blob_directories:
         blob_id = blob_directory.name
 
@@ -572,9 +591,16 @@ def _summarize_dandiset_by_asset(
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(bytes_sent)
+        )
 
         summarized_activity_by_asset[asset_path] += sum(bytes_sent)
         number_of_requests_by_asset[asset_path] += len(bytes_sent)
+        number_of_downloads_by_asset[asset_path] += sum(downloads)
 
     if len(summarized_activity_by_asset) == 0:
         return
@@ -586,6 +612,7 @@ def _summarize_dandiset_by_asset(
             "asset_path": all_asset_paths,
             "bytes_sent": list(summarized_activity_by_asset.values()),
             "number_of_requests": [number_of_requests_by_asset[path] for path in all_asset_paths],
+            "number_of_downloads": [number_of_downloads_by_asset[path] for path in all_asset_paths],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
@@ -596,6 +623,7 @@ def _summarize_dandiset_by_region(
 ) -> None:
     all_regions = []
     all_bytes_sent = []
+    all_downloads = []
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
@@ -603,8 +631,8 @@ def _summarize_dandiset_by_region(
         if not blob_directory.exists():
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
 
-        indexed_ips_file_path = blob_directory / "indexed_ips.txt"
-        ips = [ip.strip() for ip in indexed_ips_file_path.read_text().splitlines()]
+        ips_file_path = blob_directory / "ips.txt"
+        ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
         regions = [ip_to_region.get(ip, "unknown") for ip in ips]
         all_regions.extend(regions)
 
@@ -612,11 +640,21 @@ def _summarize_dandiset_by_region(
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
         all_bytes_sent.extend(bytes_sent)
 
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(regions)
+        )
+        all_downloads.extend(downloads)
+
     summarized_activity_by_region = collections.defaultdict(int)
     number_of_requests_by_region = collections.defaultdict(int)
-    for region, bytes_sent in zip(all_regions, all_bytes_sent):
+    number_of_downloads_by_region = collections.defaultdict(int)
+    for region, bytes_sent, download in zip(all_regions, all_bytes_sent, all_downloads):
         summarized_activity_by_region[region] += bytes_sent
         number_of_requests_by_region[region] += 1
+        number_of_downloads_by_region[region] += download
 
     if len(summarized_activity_by_region) == 0:
         return
@@ -628,6 +666,7 @@ def _summarize_dandiset_by_region(
             "region": all_regions_ordered,
             "bytes_sent": list(summarized_activity_by_region.values()),
             "number_of_requests": [number_of_requests_by_region[region] for region in all_regions_ordered],
+            "number_of_downloads": [number_of_downloads_by_region[region] for region in all_regions_ordered],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
@@ -669,23 +708,23 @@ def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
     Parameters
     ----------
     blob_directories : list of pathlib.Path
-        Paths to per-blob extraction directories containing ``indexed_ips.txt`` files.
+        Paths to per-blob extraction directories containing ``ips.txt`` files.
 
     Returns
     -------
     set of str
-        The set of unique IP strings found across all ``indexed_ips.txt`` files.
+        The set of unique IP strings found across all ``ips.txt`` files.
     """
     unique_ips: set[str] = set()
     for blob_directory in blob_directories:
         if not blob_directory.exists():
             continue
 
-        indexed_ips_file_path = blob_directory / "indexed_ips.txt"
-        if not indexed_ips_file_path.exists():
+        ips_file_path = blob_directory / "ips.txt"
+        if not ips_file_path.exists():
             continue
 
-        unique_ips.update(ip.strip() for ip in indexed_ips_file_path.read_text().splitlines())
+        unique_ips.update(ip.strip() for ip in ips_file_path.read_text().splitlines())
     return unique_ips
 
 
@@ -699,14 +738,14 @@ def _summarize_dandiset_unique_requester_count(
     """
     Compute and save the privacy-rounded unique requester count for a Dandiset.
 
-    Reads all ``indexed_ips.txt`` files from the given blob directories, counts the
+    Reads all ``ips.txt`` files from the given blob directories, counts the
     number of unique IPs across the entire Dandiset, rounds the result via
     :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
 
     Parameters
     ----------
     blob_directories : list of pathlib.Path
-        Paths to the per-blob extraction directories containing ``indexed_ips.txt`` files.
+        Paths to the per-blob extraction directories containing ``ips.txt`` files.
     summary_file_path : pathlib.Path
         Destination file where the rounded count (as a string) will be written.
     modulo : int, optional
