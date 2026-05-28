@@ -633,7 +633,7 @@ def _summarize_dandiset_by_region(
 
         ips_file_path = blob_directory / "ips.txt"
         ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
-        regions = [ip_to_region.get(ip, "unknown") for ip in ips]
+        regions = [ip_to_region.get(ip, "missing") for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
