@@ -212,7 +212,7 @@ def test_update_ip_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
     # Mock _get_region_code_from_ip_address to return three different scenarios
     call_results = [None, "unknown", "US/California"]
 
-    def mock_get_region_code(ip_address, ipinfo_handler, ip_not_in_services):
+    def mock_get_region_code(ip_address, ipinfo_handler):
         return call_results.pop(0)
 
     with (
@@ -244,7 +244,7 @@ def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> N
 
     call_log = []
 
-    def mock_get_region_code(ip_address, ipinfo_handler, ip_not_in_services):
+    def mock_get_region_code(ip_address, ipinfo_handler):
         call_log.append(ip_address)
         return "US/TestRegion"
 
@@ -269,7 +269,6 @@ def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> N
 def test_get_region_code_service_match_with_subregion() -> None:
     """_get_region_code_from_ip_address matches a CIDR range and includes subregion."""
     _clear_lru_caches()
-    ip_not_in_services: dict = {}
     mock_handler = MagicMock()
 
     with patch(
@@ -281,11 +280,9 @@ def test_get_region_code_service_match_with_subregion() -> None:
         result = _get_region_code_from_ip_address(
             ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            ip_not_in_services=ip_not_in_services,
         )
 
     assert result == "GitHub/us-east-1"
-    assert ip_not_in_services["192.0.2.4"] is False
     _clear_lru_caches()
 
 
@@ -293,7 +290,6 @@ def test_get_region_code_service_match_with_subregion() -> None:
 def test_get_region_code_service_match_no_subregion() -> None:
     """_get_region_code_from_ip_address matches a CIDR range without a subregion."""
     _clear_lru_caches()
-    ip_not_in_services: dict = {}
     mock_handler = MagicMock()
 
     with patch(
@@ -305,7 +301,6 @@ def test_get_region_code_service_match_no_subregion() -> None:
         result = _get_region_code_from_ip_address(
             ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            ip_not_in_services=ip_not_in_services,
         )
 
     assert result == "GitHub"
@@ -314,21 +309,23 @@ def test_get_region_code_service_match_no_subregion() -> None:
 
 @pytest.mark.ai_generated
 def test_get_region_code_already_in_ip_not_in_services() -> None:
-    """_get_region_code_from_ip_address skips CIDR loop when ip_address is already known."""
+    """_get_region_code_from_ip_address checks ipinfo when no service CIDR matches."""
     _clear_lru_caches()
-    ip_not_in_services: dict = {"192.0.2.4": True}  # already determined not in services
     mock_handler = MagicMock()
+    mock_details = MagicMock()
+    mock_details.details = {"bogon": True}
+    mock_handler.getDetails.return_value = mock_details
 
     with patch(
         "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
     ) as mock_cidr:
-        # Should NOT be called because ip_address is already in ip_not_in_services
-        _get_region_code_from_ip_address(
+        mock_cidr.return_value = []
+        result = _get_region_code_from_ip_address(
             ip_address="192.0.2.4",
             ipinfo_handler=mock_handler,
-            ip_not_in_services=ip_not_in_services,
         )
-        mock_cidr.assert_not_called()
+        assert mock_cidr.called
+    assert result == "bogon"
     _clear_lru_caches()
 
 
