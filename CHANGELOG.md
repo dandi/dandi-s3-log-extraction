@@ -14,7 +14,6 @@
 
 ### 🔩 Dependency Updates
 
-- Updated the `s3-log-extraction` dependency to upstream commit `559803a03deae554ddd4fab78ec66db5a54cb317` so the current IP utils module layout is available. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Updated compatibility for the latest `s3-log-extraction` release by pinning the lower bound to `>=1.9.2` and adapting extractor tests and summary columns. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 ### 🏠 Internal
