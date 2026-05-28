@@ -65,9 +65,7 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
             "number_of_unique_regions": number_of_unique_regions,
             "number_of_unique_countries": number_of_unique_countries,
             "total_number_of_requests": int(summary["number_of_requests"].sum()),
-            "total_number_of_downloads": int(summary["number_of_downloads"].sum())
-            if "number_of_downloads" in summary.columns
-            else 0,
+            "total_number_of_downloads": int(summary["number_of_downloads"].sum()),
             "number_of_requesters": number_of_requesters,
         }
 
