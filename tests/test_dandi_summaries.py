@@ -4,8 +4,13 @@ import shutil
 
 import pandas
 import py
+import s3_log_extraction.summarize
 
 import dandi_s3_log_extraction
+from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _summarize_archive_by_asset_type_per_week,
+    _summarize_archive_unique_requester_count,
+)
 
 
 def test_dandiset_summaries(tmpdir: py.path.local):
@@ -28,7 +33,17 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=test_dir, workers=1, unassociated=True
     )
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=test_dir)
+
+    # Generate archive-level summaries using parent package tools (verifies parent functions work on plugin output)
+    s3_log_extraction.summarize.generate_archive_summaries(cache_directory=test_dir)
+
+    # Generate archive-level summaries that require plugin-specific tools
+    _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
+    all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
+    _summarize_archive_unique_requester_count(
+        blob_directories=all_blob_dirs,
+        summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
+    )
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
@@ -77,9 +92,13 @@ def test_dandiset_summaries(tmpdir: py.path.local):
             f"  expected: {expected_tsv_path.read_text().strip()!r}\n"
         )
 
-    # Verify totals.json
-    test_totals = json.loads((test_summary_dir / "totals.json").read_text())
-    expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
-    assert (
-        test_totals == expected_totals
-    ), f"\n\ntotals.json mismatch:\n  test:     {test_totals}\n  expected: {expected_totals}\n"
+    # Verify that the parent package generate_all_dataset_totals works on plugin-produced summaries
+    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
+
+    test_totals_path = test_summary_dir / "totals.json"
+    expected_totals_path = expected_summaries_dir / "totals.json"
+
+    test_totals = json.loads(test_totals_path.read_text())
+    expected_totals = json.loads(expected_totals_path.read_text())
+
+    assert test_totals == expected_totals

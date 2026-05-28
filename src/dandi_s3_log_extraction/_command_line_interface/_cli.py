@@ -8,7 +8,7 @@ import rich_click
 import s3_log_extraction
 
 from ..extractors import DandiRemoteS3LogAccessExtractor
-from ..summarize import generate_dandiset_summaries, generate_dandiset_totals
+from ..summarize import generate_dandiset_summaries
 
 
 # dandis3logextraction
@@ -244,38 +244,3 @@ def _update_summaries_cli(
                 unassociated=unassociated,
                 cache_directory=cache_directory,
             )
-
-
-# dandis3logextraction update totals
-@_update_cli.command(name="totals")
-@rich_click.option(
-    "--mode",
-    help=(
-        "Generate condensed summaries of activity across the extracted data per object key. "
-        "Mode 'dandi' will map asset hashes to Dandisets and their content filenames. "
-    ),
-    required=False,
-    type=rich_click.Choice(choices=["dandi", "archive"]),
-    default=None,
-)
-@rich_click.option(
-    "--cache",
-    "cache_directory",
-    help=(
-        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
-        "If not provided, the default cache directory from the configuration will be used."
-    ),
-    required=False,
-    type=rich_click.Path(file_okay=False, dir_okay=True),
-    default=None,
-)
-def _update_totals_cli(
-    mode: typing.Literal["dandi", "archive"] | None = None,
-    cache_directory: str | None = None,
-) -> None:
-    """Generate grand totals of all extracted data."""
-    match mode:
-        case "archive":
-            s3_log_extraction.summarize.generate_archive_totals(cache_directory=cache_directory)
-        case _:
-            generate_dandiset_totals(cache_directory=cache_directory)
