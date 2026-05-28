@@ -39,7 +39,7 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
 
         unique_countries = dict()
         for region in summary["region"]:
-            if region in ["VPN", "GitHub", "unknown"]:
+            if region in ["VPN", "GitHub", "unknown", "undetermined", "missing"]:
                 continue
 
             region_split = region.split("/")
