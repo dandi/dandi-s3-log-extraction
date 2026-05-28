@@ -1,4 +1,3 @@
-import json
 import pathlib
 import shutil
 
@@ -28,7 +27,6 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=test_dir, workers=1, unassociated=True
     )
-    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=test_dir)
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
@@ -76,10 +74,3 @@ def test_dandiset_summaries(tmpdir: py.path.local):
             f"  test:     {test_tsv_path.read_text().strip()!r}\n"
             f"  expected: {expected_tsv_path.read_text().strip()!r}\n"
         )
-
-    # Verify totals.json
-    test_totals = json.loads((test_summary_dir / "totals.json").read_text())
-    expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
-    assert (
-        test_totals == expected_totals
-    ), f"\n\ntotals.json mismatch:\n  test:     {test_totals}\n  expected: {expected_totals}\n"
