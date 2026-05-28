@@ -90,4 +90,4 @@ def generate_dandiset_totals(cache_directory: str | pathlib.Path | None = None) 
 
     top_level_summary_file_path = summary_directory / "totals.json"
     with top_level_summary_file_path.open(mode="w") as io:
-        json.dump(obj={**all_dandiset_totals, "archive": archive_totals}, fp=io)
+        json.dump(obj={**all_dandiset_totals, "archive": archive_totals}, fp=io, indent=2)
