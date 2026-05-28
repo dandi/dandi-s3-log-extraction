@@ -4,9 +4,9 @@ import shutil
 
 import pandas
 import py
+import s3_log_extraction.summarize
 
 import dandi_s3_log_extraction
-import s3_log_extraction.summarize
 
 
 def test_dandiset_summaries(tmpdir: py.path.local):
