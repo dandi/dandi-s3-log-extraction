@@ -165,20 +165,20 @@ def generate_dandiset_summaries(
                     maxlen=0,
                 )
 
-    _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
-    _summarize_archive_by_day(summary_directory=summary_directory)
-    _summarize_archive_by_region(summary_directory=summary_directory)
+    # _summarize_archive_by_asset_type_per_week(summary_directory=summary_directory)
+    # _summarize_archive_by_day(summary_directory=summary_directory)
+    # _summarize_archive_by_region(summary_directory=summary_directory)
 
-    if unassociated:
-        all_blob_directories_for_archive = dandiset_id_to_local_content_directories.get("undetermined", [])
-    else:
-        all_blob_directories_for_archive = []
-        for dandiset_id in dandiset_ids_to_summarize:
-            all_blob_directories_for_archive.extend(dandiset_id_to_local_content_directories.get(dandiset_id, []))
-    _summarize_archive_unique_requester_count(
-        blob_directories=all_blob_directories_for_archive,
-        summary_file_path=summary_directory / "archive" / "requester_count.tsv",
-    )
+    # if unassociated:
+    #     all_blob_directories_for_archive = dandiset_id_to_local_content_directories.get("undetermined", [])
+    # else:
+    #     all_blob_directories_for_archive = []
+    #     for dandiset_id in dandiset_ids_to_summarize:
+    #         all_blob_directories_for_archive.extend(dandiset_id_to_local_content_directories.get(dandiset_id, []))
+    # _summarize_archive_unique_requester_count(
+    #     blob_directories=all_blob_directories_for_archive,
+    #     summary_file_path=summary_directory / "archive" / "requester_count.tsv",
+    # )
 
 
 def _get_determinable_dandi_asset_info(
