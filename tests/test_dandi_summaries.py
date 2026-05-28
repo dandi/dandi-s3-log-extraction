@@ -1,3 +1,4 @@
+import json
 import pathlib
 import shutil
 
@@ -5,6 +6,7 @@ import pandas
 import py
 
 import dandi_s3_log_extraction
+import s3_log_extraction.summarize
 
 
 def test_dandiset_summaries(tmpdir: py.path.local):
@@ -74,3 +76,14 @@ def test_dandiset_summaries(tmpdir: py.path.local):
             f"  test:     {test_tsv_path.read_text().strip()!r}\n"
             f"  expected: {expected_tsv_path.read_text().strip()!r}\n"
         )
+
+    # Verify that the parent package generate_all_dataset_totals works on plugin-produced summaries
+    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
+
+    test_totals_path = test_summary_dir / "totals.json"
+    expected_totals_path = expected_summaries_dir / "totals.json"
+
+    test_totals = json.loads(test_totals_path.read_text())
+    expected_totals = json.loads(expected_totals_path.read_text())
+
+    assert test_totals == expected_totals
