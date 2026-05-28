@@ -202,10 +202,10 @@ def test_update_ip_to_region_codes_no_api_key(tmp_path: pathlib.Path) -> None:
 @pytest.mark.ai_generated
 def test_update_ip_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
     """update_ip_to_region_codes processes IPs correctly with mocked ipinfo."""
-    # Write full_ips.txt in the extraction subdirectory with 3 test IP addresses
+    # Write ips.txt in the extraction subdirectory with 3 test IP addresses
     extraction_dir = tmp_path / "extraction"
     extraction_dir.mkdir(parents=True)
-    (extraction_dir / "full_ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.3\n")
+    (extraction_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.3\n")
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
 
@@ -238,7 +238,7 @@ def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> N
     extraction_dir.mkdir(parents=True)
     # More IPs than batch_limit would process
     ips_text = "\n".join(f"192.0.2.{i}" for i in range(1, 6))
-    (extraction_dir / "full_ips.txt").write_text(ips_text)
+    (extraction_dir / "ips.txt").write_text(ips_text)
     ip_cache_dir = tmp_path / "ips"
     ip_cache_dir.mkdir(parents=True)
 
