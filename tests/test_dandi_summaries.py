@@ -7,6 +7,10 @@ import py
 import s3_log_extraction.summarize
 
 import dandi_s3_log_extraction
+from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _summarize_archive_by_asset_type_per_week,
+    _summarize_archive_unique_requester_count,
+)
 
 
 def test_dandiset_summaries(tmpdir: py.path.local):
@@ -28,6 +32,17 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(cache_directory=test_dir, workers=1)
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=test_dir, workers=1, unassociated=True
+    )
+
+    # Generate archive-level summaries using parent package tools (verifies parent functions work on plugin output)
+    s3_log_extraction.summarize.generate_archive_summaries(cache_directory=test_dir)
+
+    # Generate archive-level summaries that require plugin-specific tools
+    _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
+    all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
+    _summarize_archive_unique_requester_count(
+        blob_directories=all_blob_dirs,
+        summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
     )
 
     test_file_paths = {
