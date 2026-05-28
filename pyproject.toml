@@ -45,7 +45,7 @@ dependencies = [
     "psutil",
     "cryptography",
     "dandi",
-    "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@fbd8367f802d1a963f3e4989c71093efe1879507",
+    "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@f2ff315da551889d8df1ae1e973d0fac3a26e8d2",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
