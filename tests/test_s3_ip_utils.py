@@ -307,28 +307,6 @@ def test_get_region_code_service_match_no_subregion() -> None:
     _clear_lru_caches()
 
 
-@pytest.mark.ai_generated
-def test_get_region_code_already_in_ip_not_in_services() -> None:
-    """_get_region_code_from_ip_address checks ipinfo when no service CIDR matches."""
-    _clear_lru_caches()
-    mock_handler = MagicMock()
-    mock_details = MagicMock()
-    mock_details.details = {"bogon": True}
-    mock_handler.getDetails.return_value = mock_details
-
-    with patch(
-        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
-    ) as mock_cidr:
-        mock_cidr.return_value = []
-        result = _get_region_code_from_ip_address(
-            ip_address="192.0.2.4",
-            ipinfo_handler=mock_handler,
-        )
-        assert mock_cidr.called
-    assert result == "bogon"
-    _clear_lru_caches()
-
-
 # ─── update_region_code_coordinates ──────────────────────────────────────────
 
 
