@@ -70,6 +70,7 @@ def test_dandi_remote_extractor_init(tmp_path: pathlib.Path) -> None:
     assert extractor._relative_script_path.exists()
     assert "IPS_TO_SKIP_REGEX" in extractor._awk_env
     assert len(extractor._awk_env["IPS_TO_SKIP_REGEX"]) > 0
+    assert extractor.use_encryption is False
 
 
 # ─── generate_dandiset_summaries error cases ─────────────────────────────────

@@ -77,7 +77,9 @@ def generate_dandiset_summaries(
         "refs/heads/min/derivatives/content_id_to_usage_dandiset_path.min.json.gz"
     )
 
-    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(cache_type="ip_to_region", cache_directory=cache_directory)
+    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
+        cache_type="ip_to_region", cache_directory=cache_directory, use_encryption=False
+    )
 
     if unassociated:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(

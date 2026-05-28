@@ -196,7 +196,7 @@ def test_update_ip_to_region_codes_no_api_key(tmp_path: pathlib.Path) -> None:
     env = {k: v for k, v in os.environ.items() if k != "IPINFO_API_KEY"}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(ValueError, match="IPINFO_API_KEY"):
-            update_ip_to_region_codes(cache_directory=tmp_path)
+            update_ip_to_region_codes(cache_directory=tmp_path, use_encryption=False)
 
 
 @pytest.mark.ai_generated
@@ -223,7 +223,7 @@ def test_update_ip_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
             side_effect=mock_get_region_code,
         ),
     ):
-        update_ip_to_region_codes(cache_directory=tmp_path)
+        update_ip_to_region_codes(cache_directory=tmp_path, use_encryption=False)
 
     # ip_to_region.yaml should contain only the non-None, non-"unknown" entry
     result = yaml.safe_load((ip_cache_dir / "ip_to_region.yaml").read_text())
@@ -256,7 +256,7 @@ def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> N
             side_effect=mock_get_region_code,
         ),
     ):
-        update_ip_to_region_codes(cache_directory=tmp_path, batch_limit=1, batch_size=2)
+        update_ip_to_region_codes(cache_directory=tmp_path, batch_limit=1, batch_size=2, use_encryption=False)
 
     # With batch_limit=1 and batch_size=2, at most 2 IPs are processed
     assert len(call_log) <= 2
@@ -341,7 +341,7 @@ def test_update_region_code_coordinates_no_keys(tmp_path: pathlib.Path) -> None:
     env = {k: v for k, v in os.environ.items() if k not in ("OPENCAGE_API_KEY", "IPINFO_API_KEY")}
     with patch.dict(os.environ, env, clear=True):
         with pytest.raises(ValueError, match="API_KEY"):
-            update_region_code_coordinates(cache_directory=tmp_path)
+            update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
 
 
 @pytest.mark.ai_generated
@@ -353,7 +353,7 @@ def test_update_region_code_coordinates_no_index_file(tmp_path: pathlib.Path) ->
         patch("opencage.geocoder.OpenCageGeocode"),
     ):
         with pytest.raises(FileNotFoundError):
-            update_region_code_coordinates(cache_directory=tmp_path)
+            update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
 
 
 @pytest.mark.ai_generated
@@ -385,7 +385,7 @@ def test_update_region_code_coordinates_full_mock(tmp_path: pathlib.Path) -> Non
         mock_ipinfo_details.details = {"latitude": 39.0, "longitude": -77.0}
         mock_ipinfo_client.getDetails.return_value = mock_ipinfo_details
 
-        update_region_code_coordinates(cache_directory=tmp_path)
+        update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
 
     output_file = ip_cache_dir / "region_codes_to_coordinates.yaml"
     assert output_file.exists()
@@ -407,7 +407,7 @@ def test_update_region_code_coordinates_opencage_failure(tmp_path: pathlib.Path)
         patch("opencage.geocoder.OpenCageGeocode", return_value=mock_opencage_client),
         patch("builtins.print") as mock_print,
     ):
-        update_region_code_coordinates(cache_directory=tmp_path)
+        update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
 
     mock_print.assert_called_once()
     assert "XX/UnknownRegion" in mock_print.call_args[0][0]
