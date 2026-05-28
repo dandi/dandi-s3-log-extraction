@@ -367,7 +367,7 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     """_summarize_dandiset_by_region includes number_of_requests column with correct counts."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
+    (blob_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
     (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
     (blob_dir / "download.txt").write_text("1\n0\n1\n")
 
@@ -432,11 +432,11 @@ def test_collect_unique_ips_basic(tmp_path: pathlib.Path) -> None:
     """_collect_unique_ips returns the union of IPs across all blob directories."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")
+    (blob_dir1 / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
+    (blob_dir2 / "ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
 
     result = _collect_unique_ips(blob_directories=[blob_dir1, blob_dir2])
     assert result == {"192.0.2.10", "192.0.2.20", "192.0.2.30"}
@@ -444,10 +444,10 @@ def test_collect_unique_ips_basic(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_collect_unique_ips_missing_file(tmp_path: pathlib.Path) -> None:
-    """_collect_unique_ips skips directories without indexed_ips.txt."""
+    """_collect_unique_ips skips directories without ips.txt."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # No indexed_ips.txt
+    # No ips.txt
 
     result = _collect_unique_ips(blob_directories=[blob_dir])
     assert result == set()
@@ -469,7 +469,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_p
     """_summarize_dandiset_unique_requester_count writes the sentinel when count < minimum."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
+    (blob_dir / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -487,7 +487,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
     blob_dir.mkdir()
     # 55 unique IPs → >= 50 minimum → rounded to nearest 20 = 60
     unique_ips = "\n".join(f"192.0.2.{i}" for i in range(55))
-    (blob_dir / "indexed_ips.txt").write_text(unique_ips)
+    (blob_dir / "ips.txt").write_text(unique_ips)
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -499,11 +499,11 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_unique_requester_count_no_indexed_ips(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_unique_requester_count returns early when no indexed_ips.txt exists."""
+def test_summarize_dandiset_unique_requester_count_no_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count returns early when no ips.txt exists."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # No indexed_ips.txt file
+    # No ips.txt file
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -536,11 +536,11 @@ def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.P
     """_summarize_archive_unique_requester_count computes true union of IPs across all blobs."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
-    (blob_dir1 / "indexed_ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
+    (blob_dir1 / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
 
     blob_dir2 = tmp_path / "blob2"
     blob_dir2.mkdir()
-    (blob_dir2 / "indexed_ips.txt").write_text("192.0.2.20\n192.0.2.30\n")  # 192.0.2.20 is shared
+    (blob_dir2 / "ips.txt").write_text("192.0.2.20\n192.0.2.30\n")  # 192.0.2.20 is shared
 
     archive_file = tmp_path / "archive" / "requester_count.tsv"
     _summarize_archive_unique_requester_count(

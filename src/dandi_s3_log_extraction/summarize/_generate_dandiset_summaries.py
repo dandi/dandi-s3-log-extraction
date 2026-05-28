@@ -240,7 +240,7 @@ def _get_undetermined_dandi_asset_info(
     # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
     batch_size = 1_000_000
     tqdm_iterable = tqdm.tqdm(
-        iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="full_ips.txt"), n=batch_size),
+        iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="ips.txt"), n=batch_size),
         total=0,
         desc="Mapping undetermined blob IDs to local paths",
         unit="batches",
@@ -629,8 +629,8 @@ def _summarize_dandiset_by_region(
         if not blob_directory.exists():
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
 
-        indexed_ips_file_path = blob_directory / "indexed_ips.txt"
-        ips = [ip.strip() for ip in indexed_ips_file_path.read_text().splitlines()]
+        ips_file_path = blob_directory / "ips.txt"
+        ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
         regions = [ip_to_region.get(ip, "unknown") for ip in ips]
         all_regions.extend(regions)
 
@@ -706,23 +706,23 @@ def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
     Parameters
     ----------
     blob_directories : list of pathlib.Path
-        Paths to per-blob extraction directories containing ``indexed_ips.txt`` files.
+        Paths to per-blob extraction directories containing ``ips.txt`` files.
 
     Returns
     -------
     set of str
-        The set of unique IP strings found across all ``indexed_ips.txt`` files.
+        The set of unique IP strings found across all ``ips.txt`` files.
     """
     unique_ips: set[str] = set()
     for blob_directory in blob_directories:
         if not blob_directory.exists():
             continue
 
-        indexed_ips_file_path = blob_directory / "indexed_ips.txt"
-        if not indexed_ips_file_path.exists():
+        ips_file_path = blob_directory / "ips.txt"
+        if not ips_file_path.exists():
             continue
 
-        unique_ips.update(ip.strip() for ip in indexed_ips_file_path.read_text().splitlines())
+        unique_ips.update(ip.strip() for ip in ips_file_path.read_text().splitlines())
     return unique_ips
 
 
@@ -736,14 +736,14 @@ def _summarize_dandiset_unique_requester_count(
     """
     Compute and save the privacy-rounded unique requester count for a Dandiset.
 
-    Reads all ``indexed_ips.txt`` files from the given blob directories, counts the
+    Reads all ``ips.txt`` files from the given blob directories, counts the
     number of unique IPs across the entire Dandiset, rounds the result via
     :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
 
     Parameters
     ----------
     blob_directories : list of pathlib.Path
-        Paths to the per-blob extraction directories containing ``indexed_ips.txt`` files.
+        Paths to the per-blob extraction directories containing ``ips.txt`` files.
     summary_file_path : pathlib.Path
         Destination file where the rounded count (as a string) will be written.
     modulo : int, optional
