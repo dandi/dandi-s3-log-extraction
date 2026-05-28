@@ -32,7 +32,7 @@ def example_log_file(tmp_path: pathlib.Path) -> pathlib.Path:
 
 def _make_validator(validator_cls, records_dir: pathlib.Path):
     """Instantiate a validator with a custom records directory."""
-    with patch("s3_log_extraction.validate._base_validator.get_cache_directory", return_value=records_dir):
+    with patch("s3_log_extraction.validate._base_validator.get_cache_subdirectory", return_value=records_dir):
         return validator_cls()
 
 
