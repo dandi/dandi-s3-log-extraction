@@ -1,2 +1,2 @@
-region	bytes_sent	number_of_requests
-unknown	1536	2
+region	bytes_sent	number_of_requests	number_of_downloads
+unknown	1536	2	1

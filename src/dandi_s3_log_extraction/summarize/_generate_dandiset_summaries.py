@@ -311,6 +311,7 @@ def _summarize_dandiset(
 def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path) -> None:
     all_dates = []
     all_bytes_sent = []
+    all_downloads = []
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
@@ -329,11 +330,21 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
         all_bytes_sent.extend(bytes_sent)
 
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(dates)
+        )
+        all_downloads.extend(downloads)
+
     summarized_activity_by_day = collections.defaultdict(int)
     number_of_requests_by_day = collections.defaultdict(int)
-    for date, bytes_sent in zip(all_dates, all_bytes_sent):
+    number_of_downloads_by_day = collections.defaultdict(int)
+    for date, bytes_sent, download in zip(all_dates, all_bytes_sent, all_downloads):
         summarized_activity_by_day[date] += bytes_sent
         number_of_requests_by_day[date] += 1
+        number_of_downloads_by_day[date] += download
 
     if len(summarized_activity_by_day) == 0:
         return
@@ -345,6 +356,7 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
             "date": all_dates_ordered,
             "bytes_sent": list(summarized_activity_by_day.values()),
             "number_of_requests": [number_of_requests_by_day[date] for date in all_dates_ordered],
+            "number_of_downloads": [number_of_downloads_by_day[date] for date in all_dates_ordered],
         }
     )
     summary_table.sort_values(by="date", inplace=True)
@@ -542,11 +554,15 @@ def _summarize_archive_by_grouped_column(*, summary_directory: pathlib.Path, tsv
     all_summary_data = pandas.concat(objs=all_summaries, ignore_index=True)
 
     archive_summary = (
-        all_summary_data.groupby(by=group_column, as_index=False)[["bytes_sent", "number_of_requests"]]
+        all_summary_data.groupby(by=group_column, as_index=False)[
+            ["bytes_sent", "number_of_requests", "number_of_downloads"]
+        ]
         .sum()
-        .reindex(columns=[group_column, "bytes_sent", "number_of_requests"])
+        .reindex(columns=[group_column, "bytes_sent", "number_of_requests", "number_of_downloads"])
     )
-    archive_summary = archive_summary.astype(dtype={"bytes_sent": "int64", "number_of_requests": "int64"})
+    archive_summary = archive_summary.astype(
+        dtype={"bytes_sent": "int64", "number_of_requests": "int64", "number_of_downloads": "int64"}
+    )
     archive_summary.sort_values(by=group_column, key=natsort.natsort_keygen(), inplace=True)
 
     archive_summary_file_path = summary_directory / "archive" / tsv_name
@@ -559,6 +575,7 @@ def _summarize_dandiset_by_asset(
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
+    number_of_downloads_by_asset = collections.defaultdict(int)
     for blob_directory in blob_directories:
         blob_id = blob_directory.name
 
@@ -572,9 +589,16 @@ def _summarize_dandiset_by_asset(
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(bytes_sent)
+        )
 
         summarized_activity_by_asset[asset_path] += sum(bytes_sent)
         number_of_requests_by_asset[asset_path] += len(bytes_sent)
+        number_of_downloads_by_asset[asset_path] += sum(downloads)
 
     if len(summarized_activity_by_asset) == 0:
         return
@@ -586,6 +610,7 @@ def _summarize_dandiset_by_asset(
             "asset_path": all_asset_paths,
             "bytes_sent": list(summarized_activity_by_asset.values()),
             "number_of_requests": [number_of_requests_by_asset[path] for path in all_asset_paths],
+            "number_of_downloads": [number_of_downloads_by_asset[path] for path in all_asset_paths],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
@@ -596,6 +621,7 @@ def _summarize_dandiset_by_region(
 ) -> None:
     all_regions = []
     all_bytes_sent = []
+    all_downloads = []
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
@@ -612,11 +638,21 @@ def _summarize_dandiset_by_region(
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
         all_bytes_sent.extend(bytes_sent)
 
+        download_file_path = blob_directory / "download.txt"
+        downloads = (
+            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+            if download_file_path.exists()
+            else [0] * len(regions)
+        )
+        all_downloads.extend(downloads)
+
     summarized_activity_by_region = collections.defaultdict(int)
     number_of_requests_by_region = collections.defaultdict(int)
-    for region, bytes_sent in zip(all_regions, all_bytes_sent):
+    number_of_downloads_by_region = collections.defaultdict(int)
+    for region, bytes_sent, download in zip(all_regions, all_bytes_sent, all_downloads):
         summarized_activity_by_region[region] += bytes_sent
         number_of_requests_by_region[region] += 1
+        number_of_downloads_by_region[region] += download
 
     if len(summarized_activity_by_region) == 0:
         return
@@ -628,6 +664,7 @@ def _summarize_dandiset_by_region(
             "region": all_regions_ordered,
             "bytes_sent": list(summarized_activity_by_region.values()),
             "number_of_requests": [number_of_requests_by_region[region] for region in all_regions_ordered],
+            "number_of_downloads": [number_of_downloads_by_region[region] for region in all_regions_ordered],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
