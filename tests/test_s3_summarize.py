@@ -154,8 +154,8 @@ def test_generate_all_dataset_totals_all_region_types(tmp_path: pathlib.Path) ->
     totals = json.loads(output_path.read_text())
     assert "dataset1" in totals
     assert totals["dataset1"]["total_bytes_sent"] == 1500
-    assert totals["dataset1"]["total_number_of_requests"] == 15
-    assert totals["dataset1"]["total_number_of_downloads"] == 7
+    assert totals["dataset1"]["total_number_of_requests"] == "<50"
+    assert totals["dataset1"]["total_number_of_downloads"] == "<50"
     # US/California → country "US", AWS/eu-west-1 → country "EU"
     assert totals["dataset1"]["number_of_unique_countries"] == 2
 
@@ -176,6 +176,7 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
         }
     )
     region_tsv.to_csv(path_or_buf=archive_dir / "by_region.tsv", sep="\t", index=False)
+    (archive_dir / "requester_count.tsv").write_text("<50\n")
 
     s3_log_extraction.summarize.generate_archive_totals(cache_directory=tmp_path)
 
@@ -183,7 +184,7 @@ def test_generate_archive_totals_all_region_types(tmp_path: pathlib.Path) -> Non
     assert output_path.exists()
     result = json.loads(output_path.read_text())
     assert result["total_bytes_sent"] == 1500
-    assert result["total_number_of_requests"] == 15
-    assert result["total_number_of_downloads"] == 7
+    assert result["total_number_of_requests"] == "<50"
+    assert result["total_number_of_downloads"] == "<50"
     # US/California → "US", AWS/eu-west-1 → "EU" (from region_code.split("-")[0].upper())
     assert result["number_of_unique_countries"] == 2

@@ -6,6 +6,7 @@ import py
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _round_requester_count,
     _summarize_archive_by_asset_type_per_week,
     _summarize_archive_unique_requester_count,
 )
@@ -58,6 +59,11 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
         test_mapped_log = pandas.read_table(filepath_or_buffer=test_file_path, index_col=0)
         expected_mapped_log = pandas.read_table(filepath_or_buffer=expected_file_path, index_col=0)
+        for column_name in ("number_of_requests", "number_of_downloads"):
+            if column_name in expected_mapped_log.columns:
+                expected_mapped_log[column_name] = expected_mapped_log[column_name].map(
+                    lambda count: _round_requester_count(count=int(count), modulo=20, minimum=50)
+                )
 
         # Pandas assertion makes no reference to the case being tested when it fails
         try:
