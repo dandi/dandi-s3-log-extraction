@@ -244,7 +244,7 @@ def test_summarize_archive_only_week_start_column(tmp_path: pathlib.Path) -> Non
 
 @pytest.mark.ai_generated
 def test_summarize_dandiset_by_day_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_day includes number_of_requests column with correct counts."""
+    """_summarize_dandiset_by_day thresholds request/download counts below 50."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
     (blob_dir / "timestamps.txt").write_text("200101050635\n200101224258\n200109050635\n")
@@ -259,17 +259,17 @@ def test_summarize_dandiset_by_day_number_of_requests(tmp_path: pathlib.Path) ->
     assert "number_of_downloads" in result.columns
     row_2020_01_01 = result[result["date"] == "2020-01-01"].iloc[0]
     assert row_2020_01_01["bytes_sent"] == 300
-    assert row_2020_01_01["number_of_requests"] == 2
-    assert row_2020_01_01["number_of_downloads"] == 1
+    assert row_2020_01_01["number_of_requests"] == "<50"
+    assert row_2020_01_01["number_of_downloads"] == "<50"
     row_2020_01_09 = result[result["date"] == "2020-01-09"].iloc[0]
     assert row_2020_01_09["bytes_sent"] == 300
-    assert row_2020_01_09["number_of_requests"] == 1
-    assert row_2020_01_09["number_of_downloads"] == 1
+    assert row_2020_01_09["number_of_requests"] == "<50"
+    assert row_2020_01_09["number_of_downloads"] == "<50"
 
 
 @pytest.mark.ai_generated
 def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_asset includes number_of_requests column with correct counts."""
+    """_summarize_dandiset_by_asset thresholds request/download counts below 50."""
     blob_dir = tmp_path / "blobid1"
     blob_dir.mkdir()
     (blob_dir / "bytes_sent.txt").write_text("512\n1024\n256\n")
@@ -287,13 +287,13 @@ def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) 
     assert "number_of_requests" in result.columns
     assert "number_of_downloads" in result.columns
     assert result.iloc[0]["bytes_sent"] == 1792
-    assert result.iloc[0]["number_of_requests"] == 3
-    assert result.iloc[0]["number_of_downloads"] == 2
+    assert result.iloc[0]["number_of_requests"] == "<50"
+    assert result.iloc[0]["number_of_downloads"] == "<50"
 
 
 @pytest.mark.ai_generated
 def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_region includes number_of_requests column with correct counts."""
+    """_summarize_dandiset_by_region thresholds request/download counts below 50."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
     (blob_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
@@ -313,12 +313,30 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
     assert "number_of_downloads" in result.columns
     ca_row = result[result["region"] == "US/California"].iloc[0]
     assert ca_row["bytes_sent"] == 400
-    assert ca_row["number_of_requests"] == 2
-    assert ca_row["number_of_downloads"] == 2
+    assert ca_row["number_of_requests"] == "<50"
+    assert ca_row["number_of_downloads"] == "<50"
     ny_row = result[result["region"] == "US/New York"].iloc[0]
     assert ny_row["bytes_sent"] == 200
-    assert ny_row["number_of_requests"] == 1
-    assert ny_row["number_of_downloads"] == 0
+    assert ny_row["number_of_requests"] == "<50"
+    assert ny_row["number_of_downloads"] == "<50"
+
+
+@pytest.mark.ai_generated
+def test_summarize_dandiset_by_day_rounds_request_and_download_counts(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_day rounds request/download counts when at least 50."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    (blob_dir / "timestamps.txt").write_text("\n".join(["200101010000"] * 55))
+    (blob_dir / "bytes_sent.txt").write_text("\n".join(["1"] * 55))
+    (blob_dir / "download.txt").write_text("\n".join(["1"] * 55))
+
+    summary_file_path = tmp_path / "by_day.tsv"
+    _summarize_dandiset_by_day(blob_directories=[blob_dir], summary_file_path=summary_file_path)
+
+    result = pandas.read_table(filepath_or_buffer=summary_file_path)
+    row = result[result["date"] == "2020-01-01"].iloc[0]
+    assert row["number_of_requests"] == 60
+    assert row["number_of_downloads"] == 60
 
 
 # ─── _round_requester_count ───────────────────────────────────────────────────
