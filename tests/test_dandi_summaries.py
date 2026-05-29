@@ -80,6 +80,7 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
     # Verify that upstream totals generation works on plugin-produced summaries
     s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
+    s3_log_extraction.summarize.generate_archive_totals(cache_directory=test_dir)
 
     expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
     for dataset_totals in expected_totals.values():
