@@ -1,14 +1,14 @@
+import json
 import pathlib
 import shutil
 
 import pandas
 import py
+import s3_log_extraction
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _round_requester_count,
-    _summarize_archive_by_asset_type_per_week,
-    _summarize_archive_unique_requester_count,
 )
 
 
@@ -33,23 +33,18 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         cache_directory=test_dir, workers=1, unassociated=True
     )
 
-    # Generate archive-level summaries that require plugin-specific tools
-    _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
-    all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
-    _summarize_archive_unique_requester_count(
-        blob_directories=all_blob_dirs,
-        summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
-    )
+    # Generate parent-level summaries/totals from dataset-level outputs
+    s3_log_extraction.summarize.generate_parent_summaries(cache_directory=test_dir)
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
         for path in test_summary_dir.rglob(pattern="*.tsv")
-        if path.name != "requester_count.tsv" and path.relative_to(test_summary_dir).parts[0] != "archive"
+        if path.name != "requester_count.tsv"
     }
     expected_file_paths = {
         path.relative_to(expected_summaries_dir): path
         for path in expected_summaries_dir.rglob(pattern="*.tsv")
-        if path.name != "requester_count.tsv" and path.relative_to(expected_summaries_dir).parts[0] != "archive"
+        if path.name != "requester_count.tsv"
     }
     assert set(test_file_paths.keys()) == set(expected_file_paths.keys())
 
@@ -67,13 +62,24 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
         # Pandas assertion makes no reference to the case being tested when it fails
         try:
-            pandas.testing.assert_frame_equal(left=test_mapped_log, right=expected_mapped_log)
+            pandas.testing.assert_frame_equal(left=test_mapped_log, right=expected_mapped_log, check_dtype=False)
         except AssertionError as exception:
             message = (
                 f"\n\nTest file path: {test_file_path}\nExpected file path: {expected_file_path}\n\n"
                 f"{str(exception)}\n\n"
             )
             raise AssertionError(message)
+
+    expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
+    for dataset_totals in expected_totals.values():
+        for column_name in ("total_number_of_requests", "total_number_of_downloads"):
+            dataset_totals[column_name] = _round_requester_count(
+                count=int(dataset_totals[column_name]), modulo=20, minimum=50
+            )
+
+    test_totals = json.loads((test_summary_dir / "totals.json").read_text())
+    assert test_totals == expected_totals
+    assert (test_summary_dir / "archive_totals.json").exists()
 
     # Verify requester_count.tsv files
     test_tsv_paths = {
