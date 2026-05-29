@@ -294,7 +294,9 @@ def _summarize_dandiset(
     )
 
 
-def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path) -> None:
+def _summarize_dandiset_by_day(
+    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, request_count_minimum: int = 50
+) -> None:
     all_dates = []
     all_bytes_sent = []
     all_downloads = []
@@ -341,8 +343,14 @@ def _summarize_dandiset_by_day(*, blob_directories: list[pathlib.Path], summary_
         data={
             "date": all_dates_ordered,
             "bytes_sent": list(summarized_activity_by_day.values()),
-            "number_of_requests": [number_of_requests_by_day[date] for date in all_dates_ordered],
-            "number_of_downloads": [number_of_downloads_by_day[date] for date in all_dates_ordered],
+            "number_of_requests": [
+                _round_requester_count(count=number_of_requests_by_day[date], modulo=20, minimum=request_count_minimum)
+                for date in all_dates_ordered
+            ],
+            "number_of_downloads": [
+                _round_requester_count(count=number_of_downloads_by_day[date], modulo=20, minimum=request_count_minimum)
+                for date in all_dates_ordered
+            ],
         }
     )
     summary_table.sort_values(by="date", inplace=True)
@@ -513,7 +521,11 @@ def _summarize_archive_by_asset_type_per_week(*, summary_directory: pathlib.Path
 
 
 def _summarize_dandiset_by_asset(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    blob_id_to_asset_path: dict[str, str],
+    request_count_minimum: int = 50,
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
@@ -551,15 +563,29 @@ def _summarize_dandiset_by_asset(
         data={
             "asset_path": all_asset_paths,
             "bytes_sent": list(summarized_activity_by_asset.values()),
-            "number_of_requests": [number_of_requests_by_asset[path] for path in all_asset_paths],
-            "number_of_downloads": [number_of_downloads_by_asset[path] for path in all_asset_paths],
+            "number_of_requests": [
+                _round_requester_count(
+                    count=number_of_requests_by_asset[path], modulo=20, minimum=request_count_minimum
+                )
+                for path in all_asset_paths
+            ],
+            "number_of_downloads": [
+                _round_requester_count(
+                    count=number_of_downloads_by_asset[path], modulo=20, minimum=request_count_minimum
+                )
+                for path in all_asset_paths
+            ],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
 def _summarize_dandiset_by_region(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, ip_to_region: dict[str, str]
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    ip_to_region: dict[str, str],
+    request_count_minimum: int = 50,
 ) -> None:
     all_regions = []
     all_bytes_sent = []
@@ -605,8 +631,18 @@ def _summarize_dandiset_by_region(
         data={
             "region": all_regions_ordered,
             "bytes_sent": list(summarized_activity_by_region.values()),
-            "number_of_requests": [number_of_requests_by_region[region] for region in all_regions_ordered],
-            "number_of_downloads": [number_of_downloads_by_region[region] for region in all_regions_ordered],
+            "number_of_requests": [
+                _round_requester_count(
+                    count=number_of_requests_by_region[region], modulo=20, minimum=request_count_minimum
+                )
+                for region in all_regions_ordered
+            ],
+            "number_of_downloads": [
+                _round_requester_count(
+                    count=number_of_downloads_by_region[region], modulo=20, minimum=request_count_minimum
+                )
+                for region in all_regions_ordered
+            ],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)

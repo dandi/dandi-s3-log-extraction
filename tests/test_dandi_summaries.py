@@ -8,6 +8,7 @@ import s3_log_extraction.summarize
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _round_requester_count,
     _summarize_archive_by_asset_type_per_week,
     _summarize_archive_unique_requester_count,
 )
@@ -34,10 +35,8 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         cache_directory=test_dir, workers=1, unassociated=True
     )
 
-    # Generate archive-level summaries using parent package tools (verifies parent functions work on plugin output)
+    # Generate archive-level summaries with upstream + plugin-specific functions
     s3_log_extraction.summarize.generate_archive_summaries(cache_directory=test_dir)
-
-    # Generate archive-level summaries that require plugin-specific tools
     _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
     all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
     _summarize_archive_unique_requester_count(
@@ -63,16 +62,36 @@ def test_dandiset_summaries(tmpdir: py.path.local):
 
         test_mapped_log = pandas.read_table(filepath_or_buffer=test_file_path, index_col=0)
         expected_mapped_log = pandas.read_table(filepath_or_buffer=expected_file_path, index_col=0)
+        for column_name in ("number_of_requests", "number_of_downloads"):
+            if column_name in expected_mapped_log.columns:
+                expected_mapped_log[column_name] = expected_mapped_log[column_name].map(
+                    lambda count: _round_requester_count(count=int(count), modulo=20, minimum=50)
+                )
 
         # Pandas assertion makes no reference to the case being tested when it fails
         try:
-            pandas.testing.assert_frame_equal(left=test_mapped_log, right=expected_mapped_log)
+            pandas.testing.assert_frame_equal(left=test_mapped_log, right=expected_mapped_log, check_dtype=False)
         except AssertionError as exception:
             message = (
                 f"\n\nTest file path: {test_file_path}\nExpected file path: {expected_file_path}\n\n"
                 f"{str(exception)}\n\n"
             )
             raise AssertionError(message)
+
+    # Verify that upstream totals generation works on plugin-produced summaries
+    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
+    s3_log_extraction.summarize.generate_archive_totals(cache_directory=test_dir)
+
+    expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
+    for dataset_totals in expected_totals.values():
+        for column_name in ("total_number_of_requests", "total_number_of_downloads"):
+            dataset_totals[column_name] = _round_requester_count(
+                count=int(dataset_totals[column_name]), modulo=20, minimum=50
+            )
+
+    test_totals = json.loads((test_summary_dir / "totals.json").read_text())
+    assert test_totals == expected_totals
+    assert (test_summary_dir / "archive_totals.json").exists()
 
     # Verify requester_count.tsv files
     test_tsv_paths = {
@@ -91,14 +110,3 @@ def test_dandiset_summaries(tmpdir: py.path.local):
             f"  test:     {test_tsv_path.read_text().strip()!r}\n"
             f"  expected: {expected_tsv_path.read_text().strip()!r}\n"
         )
-
-    # Verify that the parent package generate_all_dataset_totals works on plugin-produced summaries
-    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
-
-    test_totals_path = test_summary_dir / "totals.json"
-    expected_totals_path = expected_summaries_dir / "totals.json"
-
-    test_totals = json.loads(test_totals_path.read_text())
-    expected_totals = json.loads(expected_totals_path.read_text())
-
-    assert test_totals == expected_totals
