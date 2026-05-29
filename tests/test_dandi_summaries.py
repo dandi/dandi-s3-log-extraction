@@ -4,11 +4,13 @@ import shutil
 
 import pandas
 import py
-import s3_log_extraction
+import s3_log_extraction.summarize
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _round_requester_count,
+    _summarize_archive_by_asset_type_per_week,
+    _summarize_archive_unique_requester_count,
 )
 
 
@@ -33,8 +35,14 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         cache_directory=test_dir, workers=1, unassociated=True
     )
 
-    # Generate parent-level summaries/totals from dataset-level outputs
-    s3_log_extraction.summarize.generate_parent_summaries(cache_directory=test_dir)
+    # Generate archive-level summaries with upstream + plugin-specific functions
+    s3_log_extraction.summarize.generate_archive_summaries(cache_directory=test_dir)
+    _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
+    all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
+    _summarize_archive_unique_requester_count(
+        blob_directories=all_blob_dirs,
+        summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
+    )
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
@@ -69,6 +77,9 @@ def test_dandiset_summaries(tmpdir: py.path.local):
                 f"{str(exception)}\n\n"
             )
             raise AssertionError(message)
+
+    # Verify that upstream totals generation works on plugin-produced summaries
+    s3_log_extraction.summarize.generate_all_dataset_totals(cache_directory=test_dir)
 
     expected_totals = json.loads((expected_summaries_dir / "totals.json").read_text())
     for dataset_totals in expected_totals.values():
