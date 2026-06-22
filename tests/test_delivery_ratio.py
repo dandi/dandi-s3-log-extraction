@@ -7,8 +7,10 @@ import pytest
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    DELIVERY_RATIO_PERCENTILE_COLUMN,
     _compute_delivery_ratio_fields,
     _compute_delivery_ratio_percentiles,
+    _format_delivery_ratio_percentiles,
     _pool_archive_delivery_ratios,
     _read_by_asset_delivery_ratios,
 )
@@ -124,6 +126,26 @@ def test_compute_delivery_ratio_fields_zero_usable_assets() -> None:
 
 
 @pytest.mark.ai_generated
+def test_delivery_ratio_percentile_column_name() -> None:
+    assert DELIVERY_RATIO_PERCENTILE_COLUMN == "delivery_ratio(p10,p25,p50,p75,p90)"
+
+
+@pytest.mark.ai_generated
+def test_format_delivery_ratio_percentiles() -> None:
+    fields = _compute_delivery_ratio_fields(delivery_ratios=[2.0, 3.0], bytes_delivered=[100, 300])
+
+    assert _format_delivery_ratio_percentiles(fields) == "2.1,2.25,2.5,2.75,2.9"
+
+
+@pytest.mark.ai_generated
+def test_format_delivery_ratio_percentiles_zero_usable_assets() -> None:
+    fields = _compute_delivery_ratio_fields(delivery_ratios=[], bytes_delivered=[])
+
+    # Every percentile is empty so the comma-separated tuple keeps its five slots
+    assert _format_delivery_ratio_percentiles(fields) == ",,,,"
+
+
+@pytest.mark.ai_generated
 def test_pool_archive_delivery_ratios_skips_archive_directory(tmp_path: pathlib.Path) -> None:
     _write_by_asset_tsv(directory=tmp_path / "000001", rows=[("sub-1/a.nwb", 100, 2.0)])
     _write_by_asset_tsv(directory=tmp_path / "000002", rows=[("sub-2/b.nwb", 300, 3.0)])
@@ -202,10 +224,10 @@ def test_generate_archive_summaries_and_totals_pool_across_dandisets(tmp_path: p
     expected_percentiles = (2.2, 2.5, 3.0, 3.5, 3.8)
 
     archive_delivery_ratio = pandas.read_table(filepath_or_buffer=summary_directory / "archive" / "delivery_ratio.tsv")
-    assert list(archive_delivery_ratio.columns) == list(DELIVERY_RATIO_FIELD_NAMES)
+    # The TSV reports the five percentiles as one comma-separated column plus the weighted scalar
+    assert list(archive_delivery_ratio.columns) == [DELIVERY_RATIO_PERCENTILE_COLUMN, "delivery_ratio_weighted"]
     row = archive_delivery_ratio.iloc[0]
-    for column_name, expected_value in zip(PERCENTILE_COLUMN_NAMES, expected_percentiles):
-        assert row[column_name] == pytest.approx(expected_value)
+    assert str(row[DELIVERY_RATIO_PERCENTILE_COLUMN]) == ",".join(str(value) for value in expected_percentiles)
     assert row["delivery_ratio_weighted"] == pytest.approx(600 / 200)
 
     archive_totals = json.loads((summary_directory / "archive_totals.json").read_text())

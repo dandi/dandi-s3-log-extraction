@@ -722,6 +722,17 @@ DELIVERY_RATIO_FIELD_NAMES = (
     "delivery_ratio_weighted",
 )
 
+# Single TSV column holding the five percentiles as a comma-separated tuple (for example "0.1,0.2,0.3,0.4,0.5")
+DELIVERY_RATIO_PERCENTILE_COLUMN = "delivery_ratio(" + ",".join(f"p{p}" for p in DELIVERY_RATIO_PERCENTILES) + ")"
+
+
+def _format_delivery_ratio_percentiles(fields: dict[str, float], /) -> str:
+    """Format the five percentile fields as one comma-separated string, using an empty slot for ``NaN``."""
+    return ",".join(
+        "" if math.isnan(value := fields[f"delivery_ratio_p{percentile}"]) else str(value)
+        for percentile in DELIVERY_RATIO_PERCENTILES
+    )
+
 
 def _read_by_asset_delivery_ratios(by_asset_file_path: pathlib.Path, /) -> tuple[list[float], list[int]]:
     """
@@ -1083,7 +1094,10 @@ def generate_archive_summaries(
     archive_directory = summary_directory / "archive"
     archive_directory.mkdir(exist_ok=True)
     summary_table = pandas.DataFrame(
-        data={field_name: [fields[field_name]] for field_name in DELIVERY_RATIO_FIELD_NAMES}
+        data={
+            DELIVERY_RATIO_PERCENTILE_COLUMN: [_format_delivery_ratio_percentiles(fields)],
+            "delivery_ratio_weighted": [fields["delivery_ratio_weighted"]],
+        }
     )
     summary_table.to_csv(
         path_or_buf=archive_directory / "delivery_ratio.tsv", mode="w", sep="\t", header=True, index=False
