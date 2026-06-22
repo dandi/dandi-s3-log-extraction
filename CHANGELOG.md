@@ -4,6 +4,7 @@
 
 ### 🚀 Enhancement
 
+- Added a per-asset `delivery_ratio` column to `by_asset.tsv` and a per-Dandiset `delivery_ratio.tsv` summary with `delivery_ratio_p10`, `delivery_ratio_p25`, `delivery_ratio_p50`, `delivery_ratio_p75`, `delivery_ratio_p90`, and `delivery_ratio_weighted`. The delivery ratio is the total bytes delivered over the asset's true DANDI size, signaling streaming versus download intensity. Asset sizes are fetched from the DANDI API and cached locally in `asset_sizes.json`. ([#86](https://github.com/dandi/dandi-s3-log-extraction/pull/86))
 - Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--cache-directory` to `dandis3logextraction extract` so remote extraction can use a custom cache directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--inventory` to `dandis3logextraction extract --mode remote` so extraction can use a local S3 Inventory directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))

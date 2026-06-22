@@ -4,8 +4,10 @@ import datetime
 import gzip
 import itertools
 import json
+import logging
 import pathlib
 
+import numpy
 import pandas
 import requests
 import s3_log_extraction
@@ -14,10 +16,15 @@ from beartype import beartype
 
 from .._parallel._utils import _handle_max_workers
 
+logger = logging.getLogger(name=__name__)
+
 ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Video", "Miscellaneous")
 NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
+
+# Percentile points of the per-asset delivery ratio distribution emitted per Dandiset
+DELIVERY_RATIO_PERCENTILES = (10, 25, 50, 75, 90)
 
 
 @beartype
@@ -87,6 +94,7 @@ def generate_dandiset_summaries(
         )
 
         # Special key for no current association
+        # Undetermined content cannot be mapped back to a DANDI asset, so no asset sizes are available
         dandiset_id = "undetermined"
         _summarize_dandiset(
             dandiset_id=dandiset_id,
@@ -94,6 +102,7 @@ def generate_dandiset_summaries(
             summary_directory=summary_directory,
             ip_to_region=ip_to_region,
             blob_id_to_asset_path=content_id_to_dandiset_path,
+            blob_id_to_size={},
         )
     else:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_determinable_dandi_asset_info(
@@ -114,6 +123,14 @@ def generate_dandiset_summaries(
         else:
             dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
 
+        # Resolve the true (DANDI metadata) byte size of each accessed asset, reusing a local cache across runs
+        blob_id_to_size = _load_asset_sizes(
+            client=client,
+            dandiset_ids=dandiset_ids_to_summarize,
+            dandiset_id_to_local_content_directories=dandiset_id_to_local_content_directories,
+            summary_directory=summary_directory,
+        )
+
         if max_workers == 1:
             for dandiset_id in tqdm.tqdm(
                 iterable=dandiset_ids_to_summarize,
@@ -133,6 +150,7 @@ def generate_dandiset_summaries(
                     summary_directory=summary_directory,
                     ip_to_region=ip_to_region,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
+                    blob_id_to_size=blob_id_to_size,
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -144,6 +162,7 @@ def generate_dandiset_summaries(
                         summary_directory=summary_directory,
                         ip_to_region=ip_to_region,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
+                        blob_id_to_size=blob_id_to_size,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
                 ]
@@ -257,6 +276,100 @@ def _get_undetermined_dandi_asset_info(
     return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
+def _load_asset_sizes(
+    *,
+    client,
+    dandiset_ids: list[str],
+    dandiset_id_to_local_content_directories: dict[str, list[pathlib.Path]],
+    summary_directory: pathlib.Path,
+) -> dict[str, int | None]:
+    """
+    Resolve the true DANDI metadata size (in bytes) of every accessed asset.
+
+    Sizes are immutable per content (blob or Zarr) ID, so they are cached on disk keyed by content ID and reused
+    across runs to avoid slow per-asset API calls at archive scale. Each content ID is resolved at most once. A
+    content ID that the API cannot resolve is cached as ``None`` so it is not repeatedly re-fetched on later runs.
+
+    Parameters
+    ----------
+    client : dandi.dandiapi.DandiAPIClient
+        An open client used to list a Dandiset's assets when sizes are missing from the cache.
+    dandiset_ids : list of str
+        The Dandiset IDs that will be summarized.
+    dandiset_id_to_local_content_directories : dict
+        Mapping of Dandiset ID to the local per-content extraction directories (named by content ID).
+    summary_directory : pathlib.Path
+        Directory in which the persistent ``asset_sizes.json`` cache is stored.
+
+    Returns
+    -------
+    dict
+        Mapping of content ID to size in bytes, or ``None`` when the size could not be resolved.
+    """
+    content_id_to_size = _load_asset_size_cache(summary_directory)
+
+    cache_is_dirty = False
+    for dandiset_id in tqdm.tqdm(
+        iterable=dandiset_ids,
+        total=len(dandiset_ids),
+        desc="Resolving asset sizes",
+        unit="dandisets",
+        smoothing=0,
+        mininterval=5.0,
+    ):
+        blob_directories = dandiset_id_to_local_content_directories.get(dandiset_id, [])
+        requested_content_ids = [blob_directory.name for blob_directory in blob_directories]
+        missing_content_ids = [
+            content_id for content_id in requested_content_ids if content_id not in content_id_to_size
+        ]
+        if len(missing_content_ids) == 0:
+            continue
+
+        fetched_content_id_to_size = _fetch_dandiset_asset_sizes(client=client, dandiset_id=dandiset_id)
+        if fetched_content_id_to_size is None:
+            continue  # Listing failed (for example, a transient network error); retry on a later run
+
+        for content_id in missing_content_ids:
+            content_id_to_size[content_id] = fetched_content_id_to_size.get(content_id)
+        cache_is_dirty = True
+
+    if cache_is_dirty:
+        _save_asset_size_cache(summary_directory=summary_directory, content_id_to_size=content_id_to_size)
+
+    return content_id_to_size
+
+
+def _load_asset_size_cache(summary_directory: pathlib.Path, /) -> dict[str, int | None]:
+    cache_file_path = summary_directory / "asset_sizes.json"
+    if not cache_file_path.exists():
+        return {}
+    return json.loads(cache_file_path.read_text())
+
+
+def _save_asset_size_cache(*, summary_directory: pathlib.Path, content_id_to_size: dict[str, int | None]) -> None:
+    cache_file_path = summary_directory / "asset_sizes.json"
+    cache_file_path.write_text(json.dumps(content_id_to_size))
+
+
+def _fetch_dandiset_asset_sizes(*, client, dandiset_id: str) -> dict[str, int] | None:
+    """
+    List a single Dandiset's assets and return a mapping of content ID to size in bytes.
+
+    Returns ``None`` if the assets could not be listed at all so that the caller can retry on a later run rather
+    than caching the content IDs as permanently unresolvable.
+    """
+    content_id_to_size: dict[str, int] = {}
+    try:
+        dandiset = client.get_dandiset(dandiset_id)
+        for asset in dandiset.get_assets():
+            content_id = getattr(asset, "blob", None) or getattr(asset, "zarr", None)
+            if content_id is not None:
+                content_id_to_size[content_id] = int(asset.size)
+    except Exception:
+        return None
+    return content_id_to_size
+
+
 def _summarize_dandiset(
     *,
     dandiset_id: str,
@@ -264,6 +377,7 @@ def _summarize_dandiset(
     summary_directory: pathlib.Path,
     ip_to_region: dict[str, str],
     blob_id_to_asset_path: dict[str, str],
+    blob_id_to_size: dict[str, int | None],
 ) -> None:
     _summarize_dandiset_by_day(
         blob_directories=blob_directories, summary_file_path=summary_directory / dandiset_id / "by_day.tsv"
@@ -272,6 +386,12 @@ def _summarize_dandiset(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
+        blob_id_to_size=blob_id_to_size,
+    )
+    _summarize_dandiset_delivery_ratio(
+        blob_directories=blob_directories,
+        summary_file_path=summary_directory / dandiset_id / "delivery_ratio.tsv",
+        blob_id_to_size=blob_id_to_size,
     )
     _summarize_dandiset_by_asset_per_week(
         blob_directories=blob_directories,
@@ -525,11 +645,14 @@ def _summarize_dandiset_by_asset(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     blob_id_to_asset_path: dict[str, str],
+    blob_id_to_size: dict[str, int | None],
     request_count_minimum: int = 50,
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
     number_of_downloads_by_asset = collections.defaultdict(int)
+    asset_size_by_asset = collections.defaultdict(int)
+    asset_size_known_by_asset: dict[str, bool] = collections.defaultdict(bool)
     for blob_directory in blob_directories:
         blob_id = blob_directory.name
 
@@ -554,6 +677,12 @@ def _summarize_dandiset_by_asset(
         number_of_requests_by_asset[asset_path] += len(bytes_sent)
         number_of_downloads_by_asset[asset_path] += sum(downloads)
 
+        # Accumulate true asset size for the delivery ratio; sizes of 0 or missing do not contribute
+        asset_size = blob_id_to_size.get(blob_id)
+        if asset_size is not None and asset_size > 0:
+            asset_size_by_asset[asset_path] += asset_size
+            asset_size_known_by_asset[asset_path] = True
+
     if len(summarized_activity_by_asset) == 0:
         return
 
@@ -575,8 +704,102 @@ def _summarize_dandiset_by_asset(
                 )
                 for path in all_asset_paths
             ],
+            "delivery_ratio": [
+                (
+                    (summarized_activity_by_asset[path] / asset_size_by_asset[path])
+                    if asset_size_known_by_asset.get(path, False)
+                    else float("nan")
+                )
+                for path in all_asset_paths
+            ],
         }
     )
+    summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+
+def _compute_delivery_ratio_percentiles(delivery_ratios: list[float], /) -> dict[str, float]:
+    """
+    Compute the per-Dandiset delivery ratio percentiles from a list of per-asset delivery ratios.
+
+    Uses linear interpolation between data points (the NumPy default). A single usable ratio yields that ratio for
+    all five percentiles, and an empty list yields ``NaN`` for all five percentiles.
+
+    Parameters
+    ----------
+    delivery_ratios : list of float
+        The per-asset delivery ratios for all usable assets in a Dandiset.
+
+    Returns
+    -------
+    dict
+        Mapping of percentile column name (for example ``"delivery_ratio_p10"``) to its float value.
+    """
+    column_names = [f"delivery_ratio_p{percentile}" for percentile in DELIVERY_RATIO_PERCENTILES]
+    if len(delivery_ratios) == 0:
+        return {column_name: float("nan") for column_name in column_names}
+
+    percentile_values = numpy.percentile(a=delivery_ratios, q=list(DELIVERY_RATIO_PERCENTILES), method="linear")
+    return {column_name: float(value) for column_name, value in zip(column_names, percentile_values)}
+
+
+def _summarize_dandiset_delivery_ratio(
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    blob_id_to_size: dict[str, int | None],
+) -> None:
+    """
+    Write the per-Dandiset delivery ratio summary.
+
+    The delivery ratio of an asset is the total bytes delivered across all logged GET requests divided by the
+    asset's true size in bytes. A ratio near 1 indicates download-dominated access while a ratio much greater than 1
+    indicates streaming-dominated access. Assets with a missing or zero size are excluded from the percentile
+    computation and the count of skipped assets is logged. The asset-weighted percentiles plus a volume-weighted
+    ratio (total bytes delivered over total size) are written as a single row, always with all five percentile
+    columns present even when no asset is usable.
+    """
+    delivery_ratios: list[float] = []
+    total_bytes_delivered = 0
+    total_asset_size = 0
+    number_of_skipped_assets = 0
+    number_of_accessed_assets = 0
+    for blob_directory in blob_directories:
+        if not blob_directory.exists():
+            continue  # No extracted logs found (possible asset was never accessed); skip to next asset
+        number_of_accessed_assets += 1
+
+        blob_id = blob_directory.name
+        asset_size = blob_id_to_size.get(blob_id)
+
+        bytes_sent_file_path = blob_directory / "bytes_sent.txt"
+        bytes_delivered = sum(int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines())
+
+        if asset_size is None or asset_size == 0:
+            number_of_skipped_assets += 1
+            continue
+
+        delivery_ratios.append(bytes_delivered / asset_size)
+        total_bytes_delivered += bytes_delivered
+        total_asset_size += asset_size
+
+    if number_of_accessed_assets == 0:
+        return  # Dandiset was never accessed; match the other summaries by writing nothing
+
+    if number_of_skipped_assets > 0:
+        logger.info(
+            "Skipped %d of %d accessed assets with missing or zero size while computing delivery ratios for %s",
+            number_of_skipped_assets,
+            number_of_accessed_assets,
+            summary_file_path.parent.name,
+        )
+
+    percentiles = _compute_delivery_ratio_percentiles(delivery_ratios)
+    weighted_ratio = (total_bytes_delivered / total_asset_size) if total_asset_size > 0 else float("nan")
+
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, list[float]] = {column_name: [value] for column_name, value in percentiles.items()}
+    data["delivery_ratio_weighted"] = [weighted_ratio]
+    summary_table = pandas.DataFrame(data=data)
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
 
 
