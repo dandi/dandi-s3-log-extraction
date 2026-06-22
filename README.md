@@ -71,3 +71,33 @@ dandis3logextraction update totals
 dandis3logextraction update summaries --mode archive
 dandis3logextraction update totals --mode archive
 ```
+
+
+
+## Delivery ratio (experimental)
+
+The delivery ratio is an experimental, DANDI-only signal of streaming versus download intensity.
+
+For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes:
+
+$$r_a = \frac{1}{s_a} \sum\limits_{n \in G_a} b_n$$
+
+where:
+- $G_a$ is the set of logged GET requests for asset $a$
+- $b_n$ is the bytes delivered in request $n$
+- $s_a$ is the asset's true size in bytes.
+
+A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the asset's size worth of bytes has been delivered many times over across requests.
+
+The metric appears in three places:
+
+- A per-asset `delivery_ratio` column in each Dandiset's `by_asset.tsv`.
+- Per-Dandiset percentiles in `totals.json`, and archive wide percentiles in `archive_totals.json` and `archive/delivery_ratio.tsv`. The reported fields are `delivery_ratio_p10`, `delivery_ratio_p25`, `delivery_ratio_p50`, `delivery_ratio_p75`, `delivery_ratio_p90`, and `delivery_ratio_weighted`.
+
+Percentiles are reported at the Dandiset and archive level, rather than a single average, because per-asset delivery ratios are highly skewed. Within one Dandiset some assets are downloaded close to once while others are streamed many times over, so a mean would be dominated by a few heavily streamed assets and hide that spread. The five percentiles describe the shape of the distribution compactly, and the exact per-asset values are still available in `by_asset.tsv` for anyone who needs them.
+
+The percentiles are asset weighted, where each asset contributes one ratio $r_a$ regardless of its size. The `delivery_ratio_weighted` field is instead volume weighted, computed as the total bytes delivered over the total asset size across the usable assets $A$:
+
+$$r_{\text{vol}} = \frac{\sum\limits_{a \in A} \sum\limits_{n \in G_a} b_n}{\sum\limits_{a \in A} s_a}$$
+
+The gap between this volume-weighted value $r_{\text{vol}}$ and the median $p_{50}$ is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.

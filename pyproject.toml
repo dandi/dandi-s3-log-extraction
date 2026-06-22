@@ -15,7 +15,7 @@ allow-direct-references = true
 
 [project]
 name = "dandi-s3-log-extraction"
-version="1.0.2"
+version="1.0.3"
 authors = [
   { name="Cody Baker", email="cody.c.baker.phd@gmail.com" },
 ]
@@ -37,6 +37,7 @@ license = {file = "LICENSE.txt"}
 requires-python = ">=3.14"
 dependencies = [
     "beartype",
+    "numpy",
     "pandas",
     "tqdm",
     "PyYAML",

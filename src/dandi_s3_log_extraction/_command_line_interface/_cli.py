@@ -8,7 +8,12 @@ import rich_click
 import s3_log_extraction
 
 from ..extractors import DandiRemoteS3LogAccessExtractor
-from ..summarize import generate_dandiset_summaries
+from ..summarize import (
+    generate_archive_summaries,
+    generate_archive_totals,
+    generate_dandiset_summaries,
+    generate_dandiset_totals,
+)
 
 
 # dandis3logextraction
@@ -231,7 +236,7 @@ def _update_summaries_cli(
     """Generate condensed summaries of activity."""
     match mode:
         case "archive":
-            s3_log_extraction.summarize.generate_archive_summaries(cache_directory=cache_directory)
+            generate_archive_summaries(cache_directory=cache_directory)
         case _:
             pick_as_list = pick.split(",") if pick is not None else None
             skip_as_list = skip.split(",") if skip is not None else None
@@ -244,3 +249,39 @@ def _update_summaries_cli(
                 unassociated=unassociated,
                 cache_directory=cache_directory,
             )
+
+
+# dandis3logextraction update totals
+@_update_cli.command(name="totals")
+@rich_click.option(
+    "--mode",
+    help=(
+        "Generate grand totals of activity across the extracted data. "
+        "Mode 'archive' aggregates over all Dandiset totals. "
+        "By default, per-Dandiset totals are generated."
+    ),
+    required=False,
+    type=rich_click.Choice(choices=["dandi", "archive"]),
+    default=None,
+)
+@rich_click.option(
+    "--cache",
+    "cache_directory",
+    help=(
+        "Path to the folder containing all previously extracted S3 access logs (`cache_directory`). "
+        "If not provided, the default cache directory from the configuration will be used."
+    ),
+    required=False,
+    type=rich_click.Path(file_okay=False, dir_okay=True),
+    default=None,
+)
+def _update_totals_cli(
+    mode: typing.Literal["dandi", "archive"] | None = None,
+    cache_directory: str | None = None,
+) -> None:
+    """Generate grand totals of all extracted data, including experimental delivery ratio fields."""
+    match mode:
+        case "archive":
+            generate_archive_totals(cache_directory=cache_directory)
+        case _:
+            generate_dandiset_totals(cache_directory=cache_directory)

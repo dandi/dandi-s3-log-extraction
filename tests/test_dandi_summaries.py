@@ -60,8 +60,14 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         relative_file_path = expected_file_path.relative_to(expected_summaries_dir)
         test_file_path = test_summary_dir / relative_file_path
 
-        test_mapped_log = pandas.read_table(filepath_or_buffer=test_file_path, index_col=0)
-        expected_mapped_log = pandas.read_table(filepath_or_buffer=expected_file_path, index_col=0)
+        # The ``delivery_ratio`` column of ``by_asset.tsv`` depends on live DANDI asset sizes, so it is dropped from
+        # this deterministic snapshot and covered separately in ``test_delivery_ratio.py``.
+        test_mapped_log = pandas.read_table(filepath_or_buffer=test_file_path, index_col=0).drop(
+            columns=["delivery_ratio"], errors="ignore"
+        )
+        expected_mapped_log = pandas.read_table(filepath_or_buffer=expected_file_path, index_col=0).drop(
+            columns=["delivery_ratio"], errors="ignore"
+        )
         for column_name in ("number_of_requests", "number_of_downloads"):
             if column_name in expected_mapped_log.columns:
                 expected_mapped_log[column_name] = expected_mapped_log[column_name].map(
