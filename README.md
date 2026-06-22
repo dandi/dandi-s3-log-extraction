@@ -82,7 +82,10 @@ For each asset it is the total bytes delivered across all logged GET requests di
 
 $$r_a = \frac{1}{s_a} \sum\limits_{i \in G_a} b_i$$
 
-where $G_a$ is the set of logged GET requests for asset $a$, $b_i$ is the bytes delivered in request $i$, and $s_a$ is the asset's true size in bytes.
+where:
+- $G_a$ is the set of logged GET requests for asset $a$
+- $b_i$ is the bytes delivered in request $i$
+- $s_a$ is the asset's true size in bytes.
 
 A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the asset's size worth of bytes has been delivered many times over across requests.
 
