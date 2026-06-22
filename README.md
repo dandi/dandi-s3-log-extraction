@@ -78,7 +78,7 @@ dandis3logextraction update totals --mode archive
 
 The delivery ratio is an experimental, DANDI-only signal of streaming versus download intensity.
 
-For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes. The true size comes from the DANDI API rather than the logs, and sizes are cached locally in `asset_sizes.json` so they are fetched only once. A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the same bytes are served many times.
+For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes. The true size comes from the DANDI API rather than the logs, and is fetched with a live lookup on each run. A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the asset's size worth of bytes has been delivered many times over across requests.
 
 The metric appears in three places:
 

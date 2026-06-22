@@ -124,12 +124,11 @@ def generate_dandiset_summaries(
         else:
             dandiset_ids_to_summarize = [dandiset.identifier for dandiset in client.get_dandisets()]
 
-        # Resolve the true (DANDI metadata) byte size of each accessed asset, reusing a local cache across runs
+        # Resolve the true (DANDI metadata) byte size of each accessed asset via live API lookups
         blob_id_to_size = _load_asset_sizes(
             client=client,
             dandiset_ids=dandiset_ids_to_summarize,
             dandiset_id_to_local_content_directories=dandiset_id_to_local_content_directories,
-            summary_directory=summary_directory,
         )
 
         if max_workers == 1:
@@ -282,34 +281,29 @@ def _load_asset_sizes(
     client,
     dandiset_ids: list[str],
     dandiset_id_to_local_content_directories: dict[str, list[pathlib.Path]],
-    summary_directory: pathlib.Path,
 ) -> dict[str, int | None]:
     """
-    Resolve the true DANDI metadata size (in bytes) of every accessed asset.
+    Resolve the true DANDI metadata size (in bytes) of every accessed asset via live API lookups.
 
-    Sizes are immutable per content (blob or Zarr) ID, so they are cached on disk keyed by content ID and reused
-    across runs to avoid slow per-asset API calls at archive scale. Each content ID is resolved at most once. A
-    content ID that the API cannot resolve is cached as ``None`` so it is not repeatedly re-fetched on later runs.
+    Each Dandiset's assets are listed once per run to build a content ID to size mapping. A content ID that the API
+    cannot resolve is recorded as ``None``. Sizes are not persisted between runs (a local cache may be added later),
+    so this performs live lookups on every invocation.
 
     Parameters
     ----------
     client : dandi.dandiapi.DandiAPIClient
-        An open client used to list a Dandiset's assets when sizes are missing from the cache.
+        An open client used to list each Dandiset's assets.
     dandiset_ids : list of str
         The Dandiset IDs that will be summarized.
     dandiset_id_to_local_content_directories : dict
         Mapping of Dandiset ID to the local per-content extraction directories (named by content ID).
-    summary_directory : pathlib.Path
-        Directory in which the persistent ``asset_sizes.json`` cache is stored.
 
     Returns
     -------
     dict
         Mapping of content ID to size in bytes, or ``None`` when the size could not be resolved.
     """
-    content_id_to_size = _load_asset_size_cache(summary_directory)
-
-    cache_is_dirty = False
+    content_id_to_size: dict[str, int | None] = {}
     for dandiset_id in tqdm.tqdm(
         iterable=dandiset_ids,
         total=len(dandiset_ids),
@@ -319,45 +313,26 @@ def _load_asset_sizes(
         mininterval=5.0,
     ):
         blob_directories = dandiset_id_to_local_content_directories.get(dandiset_id, [])
-        requested_content_ids = [blob_directory.name for blob_directory in blob_directories]
-        missing_content_ids = [
-            content_id for content_id in requested_content_ids if content_id not in content_id_to_size
-        ]
-        if len(missing_content_ids) == 0:
+        if len(blob_directories) == 0:
             continue
 
         fetched_content_id_to_size = _fetch_dandiset_asset_sizes(client=client, dandiset_id=dandiset_id)
         if fetched_content_id_to_size is None:
-            continue  # Listing failed (for example, a transient network error); retry on a later run
+            continue  # Listing failed (for example, a transient network error)
 
-        for content_id in missing_content_ids:
+        for blob_directory in blob_directories:
+            content_id = blob_directory.name
             content_id_to_size[content_id] = fetched_content_id_to_size.get(content_id)
-        cache_is_dirty = True
-
-    if cache_is_dirty:
-        _save_asset_size_cache(summary_directory=summary_directory, content_id_to_size=content_id_to_size)
 
     return content_id_to_size
-
-
-def _load_asset_size_cache(summary_directory: pathlib.Path, /) -> dict[str, int | None]:
-    cache_file_path = summary_directory / "asset_sizes.json"
-    if not cache_file_path.exists():
-        return {}
-    return json.loads(cache_file_path.read_text())
-
-
-def _save_asset_size_cache(*, summary_directory: pathlib.Path, content_id_to_size: dict[str, int | None]) -> None:
-    cache_file_path = summary_directory / "asset_sizes.json"
-    cache_file_path.write_text(json.dumps(content_id_to_size))
 
 
 def _fetch_dandiset_asset_sizes(*, client, dandiset_id: str) -> dict[str, int] | None:
     """
     List a single Dandiset's assets and return a mapping of content ID to size in bytes.
 
-    Returns ``None`` if the assets could not be listed at all so that the caller can retry on a later run rather
-    than caching the content IDs as permanently unresolvable.
+    Returns ``None`` if the assets could not be listed at all so that the caller can treat every requested content
+    ID in that Dandiset as unresolved.
     """
     content_id_to_size: dict[str, int] = {}
     try:
