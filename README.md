@@ -78,7 +78,13 @@ dandis3logextraction update totals --mode archive
 
 The delivery ratio is an experimental, DANDI-only signal of streaming versus download intensity.
 
-For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes. A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the asset's size worth of bytes has been delivered many times over across requests.
+For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes:
+
+$$r_a = \frac{\sum_{i \in G_a} b_i}{s_a}$$
+
+where $G_a$ is the set of logged GET requests for asset $a$, $b_i$ is the bytes delivered in request $i$, and $s_a$ is the asset's true size in bytes.
+
+A ratio near 1 means access is download dominated. A ratio much greater than 1 means access is streaming dominated, since the asset's size worth of bytes has been delivered many times over across requests.
 
 The metric appears in three places:
 
@@ -87,4 +93,8 @@ The metric appears in three places:
 
 Percentiles are reported at the Dandiset and archive level, rather than a single average, because per-asset delivery ratios are highly skewed. Within one Dandiset some assets are downloaded close to once while others are streamed many times over, so a mean would be dominated by a few heavily streamed assets and hide that spread. The five percentiles describe the shape of the distribution compactly, and the exact per-asset values are still available in `by_asset.tsv` for anyone who needs them.
 
-The percentiles are asset weighted, where each asset contributes one ratio. The `delivery_ratio_weighted` field is volume weighted, computed as the total bytes delivered over the total asset size. The gap between the weighted value and the median is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.
+The percentiles are asset weighted, where each asset contributes one ratio $r_a$ regardless of its size. The `delivery_ratio_weighted` field is instead volume weighted, computed as the total bytes delivered over the total asset size across the usable assets $A$:
+
+$$r_{\text{vol}} = \frac{\sum_{a \in A} \sum_{i \in G_a} b_i}{\sum_{a \in A} s_a}$$
+
+The gap between this volume-weighted value $r_{\text{vol}}$ and the median $p_{50}$ is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.
