@@ -1,12 +1,16 @@
+import json
 import math
 import pathlib
 
 import pandas
 import pytest
 
+import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
+    _compute_delivery_ratio_fields,
     _compute_delivery_ratio_percentiles,
-    _summarize_dandiset_delivery_ratio,
+    _pool_archive_delivery_ratios,
+    _read_by_asset_delivery_ratios,
 )
 
 PERCENTILE_COLUMN_NAMES = (
@@ -16,6 +20,7 @@ PERCENTILE_COLUMN_NAMES = (
     "delivery_ratio_p75",
     "delivery_ratio_p90",
 )
+DELIVERY_RATIO_FIELD_NAMES = (*PERCENTILE_COLUMN_NAMES, "delivery_ratio_weighted")
 
 
 @pytest.mark.ai_generated
@@ -47,86 +52,163 @@ def test_compute_delivery_ratio_percentiles_zero_assets() -> None:
         assert math.isnan(percentiles[column_name])
 
 
-def _write_blob_directory(*, parent: pathlib.Path, blob_id: str, bytes_sent: list[int]) -> pathlib.Path:
-    blob_directory = parent / blob_id
-    blob_directory.mkdir(parents=True)
-    (blob_directory / "bytes_sent.txt").write_text("\n".join(str(value) for value in bytes_sent))
-    return blob_directory
+def _write_by_asset_tsv(*, directory: pathlib.Path, rows: list[tuple[str, int, float]]) -> pathlib.Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    table = pandas.DataFrame(
+        data={
+            "asset_path": [row[0] for row in rows],
+            "bytes_sent": [row[1] for row in rows],
+            "number_of_requests": ["<50"] * len(rows),
+            "number_of_downloads": ["<50"] * len(rows),
+            "delivery_ratio": [row[2] for row in rows],
+        }
+    )
+    by_asset_file_path = directory / "by_asset.tsv"
+    table.to_csv(path_or_buf=by_asset_file_path, mode="w", sep="\t", header=True, index=False)
+    return by_asset_file_path
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_delivery_ratio_skips_unusable_assets(tmp_path: pathlib.Path) -> None:
-    extraction_directory = tmp_path / "extraction"
-    extraction_directory.mkdir()
-
-    # Two usable assets (ratios 2.0 and 3.0), one with zero size, and one with a missing size; the latter two
-    # must be excluded from the percentile computation
-    blob_directories = [
-        _write_blob_directory(parent=extraction_directory, blob_id="aaa", bytes_sent=[40, 60]),
-        _write_blob_directory(parent=extraction_directory, blob_id="bbb", bytes_sent=[100, 200]),
-        _write_blob_directory(parent=extraction_directory, blob_id="ccc", bytes_sent=[999]),
-        _write_blob_directory(parent=extraction_directory, blob_id="ddd", bytes_sent=[50]),
-    ]
-    blob_id_to_size = {"aaa": 50, "bbb": 100, "ccc": 0}  # "ddd" is intentionally absent (missing size)
-
-    summary_file_path = tmp_path / "summaries" / "000000" / "delivery_ratio.tsv"
-    _summarize_dandiset_delivery_ratio(
-        blob_directories=blob_directories,
-        summary_file_path=summary_file_path,
-        blob_id_to_size=blob_id_to_size,
+def test_read_by_asset_delivery_ratios_excludes_undetermined_and_missing(tmp_path: pathlib.Path) -> None:
+    by_asset_file_path = _write_by_asset_tsv(
+        directory=tmp_path / "000001",
+        rows=[
+            ("sub-1/a.nwb", 100, 2.0),
+            ("sub-1/b.nwb", 300, 3.0),
+            ("sub-1/c.nwb", 7, float("nan")),  # size could not be resolved
+            ("undetermined", 50, float("nan")),  # aggregated bucket, not a single asset
+        ],
     )
 
-    summary_table = pandas.read_table(filepath_or_buffer=summary_file_path)
-    assert list(summary_table.columns) == [*PERCENTILE_COLUMN_NAMES, "delivery_ratio_weighted"]
-    assert len(summary_table) == 1
+    delivery_ratios, bytes_delivered = _read_by_asset_delivery_ratios(by_asset_file_path)
 
-    row = summary_table.iloc[0]
+    assert delivery_ratios == [2.0, 3.0]
+    assert bytes_delivered == [100, 300]
+
+
+@pytest.mark.ai_generated
+def test_read_by_asset_delivery_ratios_missing_file() -> None:
+    delivery_ratios, bytes_delivered = _read_by_asset_delivery_ratios(pathlib.Path("does_not_exist.tsv"))
+
+    assert delivery_ratios == []
+    assert bytes_delivered == []
+
+
+@pytest.mark.ai_generated
+def test_compute_delivery_ratio_fields() -> None:
+    fields = _compute_delivery_ratio_fields(delivery_ratios=[2.0, 3.0], bytes_delivered=[100, 300])
+
+    assert tuple(fields.keys()) == DELIVERY_RATIO_FIELD_NAMES
     expected_percentiles = (2.1, 2.25, 2.5, 2.75, 2.9)
     for column_name, expected_value in zip(PERCENTILE_COLUMN_NAMES, expected_percentiles):
-        assert row[column_name] == pytest.approx(expected_value)
-    # Volume-weighted ratio is the summed delivered bytes (100 + 300) over the summed usable sizes (50 + 100)
-    assert row["delivery_ratio_weighted"] == pytest.approx(400 / 150)
+        assert fields[column_name] == pytest.approx(expected_value)
+    # Volume-weighted ratio is summed delivered bytes (100 + 300) over summed sizes (100/2 + 300/3)
+    assert fields["delivery_ratio_weighted"] == pytest.approx(400 / 150)
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_delivery_ratio_single_asset(tmp_path: pathlib.Path) -> None:
-    extraction_directory = tmp_path / "extraction"
-    extraction_directory.mkdir()
+def test_compute_delivery_ratio_fields_single_asset() -> None:
+    fields = _compute_delivery_ratio_fields(delivery_ratios=[1.5], bytes_delivered=[150])
 
-    blob_directories = [_write_blob_directory(parent=extraction_directory, blob_id="aaa", bytes_sent=[150])]
-    blob_id_to_size = {"aaa": 100}
-
-    summary_file_path = tmp_path / "summaries" / "000000" / "delivery_ratio.tsv"
-    _summarize_dandiset_delivery_ratio(
-        blob_directories=blob_directories,
-        summary_file_path=summary_file_path,
-        blob_id_to_size=blob_id_to_size,
-    )
-
-    row = pandas.read_table(filepath_or_buffer=summary_file_path).iloc[0]
     for column_name in PERCENTILE_COLUMN_NAMES:
-        assert row[column_name] == pytest.approx(1.5)
-    assert row["delivery_ratio_weighted"] == pytest.approx(1.5)
+        assert fields[column_name] == pytest.approx(1.5)
+    assert fields["delivery_ratio_weighted"] == pytest.approx(1.5)
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_delivery_ratio_zero_usable_assets(tmp_path: pathlib.Path) -> None:
-    extraction_directory = tmp_path / "extraction"
-    extraction_directory.mkdir()
+def test_compute_delivery_ratio_fields_zero_usable_assets() -> None:
+    fields = _compute_delivery_ratio_fields(delivery_ratios=[], bytes_delivered=[])
 
-    # The asset was accessed but its size cannot be resolved, so the row is all NaN but still has every column
-    blob_directories = [_write_blob_directory(parent=extraction_directory, blob_id="aaa", bytes_sent=[150])]
-    blob_id_to_size: dict[str, int | None] = {}
+    for column_name in DELIVERY_RATIO_FIELD_NAMES:
+        assert math.isnan(fields[column_name])
 
-    summary_file_path = tmp_path / "summaries" / "000000" / "delivery_ratio.tsv"
-    _summarize_dandiset_delivery_ratio(
-        blob_directories=blob_directories,
-        summary_file_path=summary_file_path,
-        blob_id_to_size=blob_id_to_size,
+
+@pytest.mark.ai_generated
+def test_pool_archive_delivery_ratios_skips_archive_directory(tmp_path: pathlib.Path) -> None:
+    _write_by_asset_tsv(directory=tmp_path / "000001", rows=[("sub-1/a.nwb", 100, 2.0)])
+    _write_by_asset_tsv(directory=tmp_path / "000002", rows=[("sub-2/b.nwb", 300, 3.0)])
+    # An archive rollup of by_asset.tsv must never be pooled back into the archive computation
+    _write_by_asset_tsv(directory=tmp_path / "archive", rows=[("sub-x/x.nwb", 999, 9.0)])
+
+    delivery_ratios, bytes_delivered = _pool_archive_delivery_ratios(tmp_path)
+
+    assert sorted(delivery_ratios) == [2.0, 3.0]
+    assert sorted(bytes_delivered) == [100, 300]
+
+
+def _write_minimal_dataset_summary(*, summary_directory: pathlib.Path, dataset_id: str, by_asset_rows) -> None:
+    dataset_directory = summary_directory / dataset_id
+    dataset_directory.mkdir(parents=True, exist_ok=True)
+
+    pandas.DataFrame(
+        data={"region": ["US/east"], "bytes_sent": [123], "number_of_requests": [3], "number_of_downloads": [1]}
+    ).to_csv(path_or_buf=dataset_directory / "by_region.tsv", mode="w", sep="\t", header=True, index=False)
+
+    pandas.DataFrame(
+        data={"date": ["2024-01-01"], "bytes_sent": [123], "number_of_requests": [3], "number_of_downloads": [1]}
+    ).to_csv(path_or_buf=dataset_directory / "by_day.tsv", mode="w", sep="\t", header=True, index=False)
+
+    (dataset_directory / "requester_count.tsv").write_text("<50")
+
+    _write_by_asset_tsv(directory=dataset_directory, rows=by_asset_rows)
+
+
+@pytest.mark.ai_generated
+def test_generate_dandiset_totals_adds_delivery_ratio_fields(tmp_path: pathlib.Path) -> None:
+    summary_directory = tmp_path / "summaries"
+    _write_minimal_dataset_summary(
+        summary_directory=summary_directory,
+        dataset_id="000001",
+        by_asset_rows=[("sub-1/a.nwb", 100, 2.0), ("sub-1/b.nwb", 300, 3.0), ("undetermined", 50, float("nan"))],
+    )
+    # A Dandiset whose only accessed asset has an unresolved size yields no usable asset
+    _write_minimal_dataset_summary(
+        summary_directory=summary_directory,
+        dataset_id="000002",
+        by_asset_rows=[("sub-2/c.nwb", 10, float("nan"))],
     )
 
-    summary_table = pandas.read_table(filepath_or_buffer=summary_file_path)
-    assert list(summary_table.columns) == [*PERCENTILE_COLUMN_NAMES, "delivery_ratio_weighted"]
-    row = summary_table.iloc[0]
-    for column_name in [*PERCENTILE_COLUMN_NAMES, "delivery_ratio_weighted"]:
-        assert math.isnan(row[column_name])
+    dandi_s3_log_extraction.summarize.generate_dandiset_totals(cache_directory=tmp_path)
+
+    all_dataset_totals = json.loads((summary_directory / "totals.json").read_text())
+
+    expected_percentiles = (2.1, 2.25, 2.5, 2.75, 2.9)
+    for column_name, expected_value in zip(PERCENTILE_COLUMN_NAMES, expected_percentiles):
+        assert all_dataset_totals["000001"][column_name] == pytest.approx(expected_value)
+    assert all_dataset_totals["000001"]["delivery_ratio_weighted"] == pytest.approx(400 / 150)
+
+    # Zero usable assets means every delivery ratio field is null
+    for field_name in DELIVERY_RATIO_FIELD_NAMES:
+        assert all_dataset_totals["000002"][field_name] is None
+
+
+@pytest.mark.ai_generated
+def test_generate_archive_summaries_and_totals_pool_across_dandisets(tmp_path: pathlib.Path) -> None:
+    summary_directory = tmp_path / "summaries"
+    _write_minimal_dataset_summary(
+        summary_directory=summary_directory,
+        dataset_id="000001",
+        by_asset_rows=[("sub-1/a.nwb", 100, 2.0), ("sub-1/b.nwb", 300, 3.0), ("undetermined", 50, float("nan"))],
+    )
+    _write_minimal_dataset_summary(
+        summary_directory=summary_directory,
+        dataset_id="000002",
+        by_asset_rows=[("sub-2/c.nwb", 200, 4.0)],
+    )
+
+    dandi_s3_log_extraction.summarize.generate_archive_summaries(cache_directory=tmp_path)
+    dandi_s3_log_extraction.summarize.generate_archive_totals(cache_directory=tmp_path)
+
+    expected_percentiles = (2.2, 2.5, 3.0, 3.5, 3.8)
+
+    archive_delivery_ratio = pandas.read_table(filepath_or_buffer=summary_directory / "archive" / "delivery_ratio.tsv")
+    assert list(archive_delivery_ratio.columns) == list(DELIVERY_RATIO_FIELD_NAMES)
+    row = archive_delivery_ratio.iloc[0]
+    for column_name, expected_value in zip(PERCENTILE_COLUMN_NAMES, expected_percentiles):
+        assert row[column_name] == pytest.approx(expected_value)
+    assert row["delivery_ratio_weighted"] == pytest.approx(600 / 200)
+
+    archive_totals = json.loads((summary_directory / "archive_totals.json").read_text())
+    for column_name, expected_value in zip(PERCENTILE_COLUMN_NAMES, expected_percentiles):
+        assert archive_totals[column_name] == pytest.approx(expected_value)
+    assert archive_totals["delivery_ratio_weighted"] == pytest.approx(600 / 200)

@@ -44,18 +44,15 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
     )
 
-    # ``delivery_ratio.tsv`` and the ``delivery_ratio`` column depend on live DANDI asset sizes, so they are not
-    # part of the deterministic snapshot here; they are covered separately in ``test_delivery_ratio.py``.
-    skipped_file_names = {"requester_count.tsv", "delivery_ratio.tsv"}
     test_file_paths = {
         path.relative_to(test_summary_dir): path
         for path in test_summary_dir.rglob(pattern="*.tsv")
-        if path.name not in skipped_file_names
+        if path.name != "requester_count.tsv"
     }
     expected_file_paths = {
         path.relative_to(expected_summaries_dir): path
         for path in expected_summaries_dir.rglob(pattern="*.tsv")
-        if path.name not in skipped_file_names
+        if path.name != "requester_count.tsv"
     }
     assert set(test_file_paths.keys()) == set(expected_file_paths.keys())
 
@@ -63,6 +60,8 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         relative_file_path = expected_file_path.relative_to(expected_summaries_dir)
         test_file_path = test_summary_dir / relative_file_path
 
+        # The ``delivery_ratio`` column of ``by_asset.tsv`` depends on live DANDI asset sizes, so it is dropped from
+        # this deterministic snapshot and covered separately in ``test_delivery_ratio.py``.
         test_mapped_log = pandas.read_table(filepath_or_buffer=test_file_path, index_col=0).drop(
             columns=["delivery_ratio"], errors="ignore"
         )

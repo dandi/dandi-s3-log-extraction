@@ -5,6 +5,7 @@ import gzip
 import itertools
 import json
 import logging
+import math
 import pathlib
 
 import numpy
@@ -388,11 +389,6 @@ def _summarize_dandiset(
         blob_id_to_asset_path=blob_id_to_asset_path,
         blob_id_to_size=blob_id_to_size,
     )
-    _summarize_dandiset_delivery_ratio(
-        blob_directories=blob_directories,
-        summary_file_path=summary_directory / dandiset_id / "delivery_ratio.tsv",
-        blob_id_to_size=blob_id_to_size,
-    )
     _summarize_dandiset_by_asset_per_week(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset_per_week.tsv",
@@ -742,65 +738,71 @@ def _compute_delivery_ratio_percentiles(delivery_ratios: list[float], /) -> dict
     return {column_name: float(value) for column_name, value in zip(column_names, percentile_values)}
 
 
-def _summarize_dandiset_delivery_ratio(
-    *,
-    blob_directories: list[pathlib.Path],
-    summary_file_path: pathlib.Path,
-    blob_id_to_size: dict[str, int | None],
-) -> None:
-    """
-    Write the per-Dandiset delivery ratio summary.
+DELIVERY_RATIO_FIELD_NAMES = (
+    "delivery_ratio_p10",
+    "delivery_ratio_p25",
+    "delivery_ratio_p50",
+    "delivery_ratio_p75",
+    "delivery_ratio_p90",
+    "delivery_ratio_weighted",
+)
 
-    The delivery ratio of an asset is the total bytes delivered across all logged GET requests divided by the
-    asset's true size in bytes. A ratio near 1 indicates download-dominated access while a ratio much greater than 1
-    indicates streaming-dominated access. Assets with a missing or zero size are excluded from the percentile
-    computation and the count of skipped assets is logged. The asset-weighted percentiles plus a volume-weighted
-    ratio (total bytes delivered over total size) are written as a single row, always with all five percentile
-    columns present even when no asset is usable.
+
+def _read_by_asset_delivery_ratios(by_asset_file_path: pathlib.Path, /) -> tuple[list[float], list[int]]:
     """
+    Read the usable per-asset delivery ratios and delivered byte counts from a ``by_asset.tsv`` summary.
+
+    Each row of ``by_asset.tsv`` that maps to a determined asset path corresponds to a single asset, so its
+    ``delivery_ratio`` is that asset's ratio. Rows whose ratio is missing (the asset's size could not be resolved)
+    and the catch-all ``"undetermined"`` row (which aggregates many blobs and is therefore not a single asset) are
+    excluded.
+
+    Returns
+    -------
+    tuple
+        A pair of equal-length lists holding the usable delivery ratios and their corresponding delivered bytes.
+    """
+    if not by_asset_file_path.exists():
+        return [], []
+
+    table = pandas.read_table(filepath_or_buffer=by_asset_file_path)
+    if "delivery_ratio" not in table.columns:
+        return [], []
+
     delivery_ratios: list[float] = []
-    total_bytes_delivered = 0
-    total_asset_size = 0
-    number_of_skipped_assets = 0
-    number_of_accessed_assets = 0
-    for blob_directory in blob_directories:
-        if not blob_directory.exists():
-            continue  # No extracted logs found (possible asset was never accessed); skip to next asset
-        number_of_accessed_assets += 1
-
-        blob_id = blob_directory.name
-        asset_size = blob_id_to_size.get(blob_id)
-
-        bytes_sent_file_path = blob_directory / "bytes_sent.txt"
-        bytes_delivered = sum(int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines())
-
-        if asset_size is None or asset_size == 0:
-            number_of_skipped_assets += 1
+    bytes_delivered: list[int] = []
+    for asset_path, ratio, asset_bytes in zip(table["asset_path"], table["delivery_ratio"], table["bytes_sent"]):
+        if asset_path == "undetermined" or pandas.isna(ratio):
             continue
+        delivery_ratios.append(float(ratio))
+        bytes_delivered.append(int(asset_bytes))
+    return delivery_ratios, bytes_delivered
 
-        delivery_ratios.append(bytes_delivered / asset_size)
-        total_bytes_delivered += bytes_delivered
-        total_asset_size += asset_size
 
-    if number_of_accessed_assets == 0:
-        return  # Dandiset was never accessed; match the other summaries by writing nothing
+def _compute_delivery_ratio_fields(*, delivery_ratios: list[float], bytes_delivered: list[int]) -> dict[str, float]:
+    """
+    Compute the five asset-weighted percentile fields plus the volume-weighted delivery ratio.
 
-    if number_of_skipped_assets > 0:
-        logger.info(
-            "Skipped %d of %d accessed assets with missing or zero size while computing delivery ratios for %s",
-            number_of_skipped_assets,
-            number_of_accessed_assets,
-            summary_file_path.parent.name,
-        )
+    The percentiles are asset-weighted (each asset contributes one ratio) while ``delivery_ratio_weighted`` is the
+    total delivered bytes over the total asset size. The deliberate gap between the weighted ratio and the median is
+    a heterogeneity signal, so both are reported. With no usable assets every field is ``NaN``.
+    """
+    fields = _compute_delivery_ratio_percentiles(delivery_ratios)
 
-    percentiles = _compute_delivery_ratio_percentiles(delivery_ratios)
-    weighted_ratio = (total_bytes_delivered / total_asset_size) if total_asset_size > 0 else float("nan")
+    total_bytes_delivered = sum(bytes_delivered)
+    # Recover each asset's size as delivered_bytes / ratio; ratios of 0 carry no size information and are skipped
+    total_asset_size = sum(
+        asset_bytes / ratio for asset_bytes, ratio in zip(bytes_delivered, delivery_ratios) if ratio > 0
+    )
+    fields["delivery_ratio_weighted"] = (
+        (total_bytes_delivered / total_asset_size) if total_asset_size > 0 else float("nan")
+    )
+    return fields
 
-    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, list[float]] = {column_name: [value] for column_name, value in percentiles.items()}
-    data["delivery_ratio_weighted"] = [weighted_ratio]
-    summary_table = pandas.DataFrame(data=data)
-    summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
+
+def _jsonable_float(value: float, /) -> float | None:
+    """Return ``None`` in place of ``NaN`` so values serialize as valid JSON ``null``."""
+    return None if math.isnan(value) else value
 
 
 def _summarize_dandiset_by_region(
@@ -996,3 +998,159 @@ def _summarize_archive_unique_requester_count(
     rounded_count = _round_requester_count(count=len(unique_ips), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     summary_file_path.write_text(str(rounded_count))
+
+
+def _iter_dataset_by_asset_file_paths(summary_directory: pathlib.Path, /):
+    """Yield every per-Dandiset ``by_asset.tsv`` path, skipping the aggregated ``archive`` directory."""
+    for by_asset_file_path in summary_directory.rglob(pattern="by_asset.tsv"):
+        if by_asset_file_path.parent.name == "archive":
+            continue
+        yield by_asset_file_path
+
+
+def _pool_archive_delivery_ratios(summary_directory: pathlib.Path, /) -> tuple[list[float], list[int]]:
+    """Pool the usable per-asset delivery ratios and delivered bytes across every Dandiset in the archive."""
+    pooled_delivery_ratios: list[float] = []
+    pooled_bytes_delivered: list[int] = []
+    for by_asset_file_path in _iter_dataset_by_asset_file_paths(summary_directory):
+        delivery_ratios, bytes_delivered = _read_by_asset_delivery_ratios(by_asset_file_path)
+        pooled_delivery_ratios.extend(delivery_ratios)
+        pooled_bytes_delivered.extend(bytes_delivered)
+    return pooled_delivery_ratios, pooled_bytes_delivered
+
+
+def _resolve_summary_directory(*, cache_directory: str | pathlib.Path | None) -> pathlib.Path:
+    cache_directory = (
+        pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
+    )
+    return cache_directory / "summaries"
+
+
+@beartype
+def generate_dandiset_totals(
+    *,
+    cache_directory: str | pathlib.Path | None = None,
+    privacy_threshold_minimum: int = 50,
+) -> None:
+    """
+    Generate per-Dandiset totals and augment them with experimental delivery ratio fields.
+
+    This is a DANDI-specific wrapper around the generic ``s3_log_extraction`` per-dataset totals. After the upstream
+    ``totals.json`` is written, each Dandiset entry gains the asset-weighted delivery ratio percentiles
+    (``delivery_ratio_p10`` through ``delivery_ratio_p90``) and the volume-weighted ``delivery_ratio_weighted``,
+    derived from that Dandiset's ``by_asset.tsv``. Entries with no usable asset receive ``null`` for every field.
+
+    Parameters
+    ----------
+    cache_directory : path-like, optional
+        The top-level cache directory from which the summary directory is derived.
+        If not provided, the default cache directory is used.
+    privacy_threshold_minimum : int
+        Minimum disclosure threshold for privacy-rounded request and download totals. Default is ``50``.
+    """
+    s3_log_extraction.summarize.generate_all_dataset_totals(
+        cache_directory=cache_directory, privacy_threshold_minimum=privacy_threshold_minimum
+    )
+
+    summary_directory = _resolve_summary_directory(cache_directory=cache_directory)
+    totals_file_path = summary_directory / "totals.json"
+    all_dataset_totals = json.loads(totals_file_path.read_text())
+
+    for dataset_id, dataset_totals in all_dataset_totals.items():
+        delivery_ratios, bytes_delivered = _read_by_asset_delivery_ratios(
+            summary_directory / dataset_id / "by_asset.tsv"
+        )
+        fields = _compute_delivery_ratio_fields(delivery_ratios=delivery_ratios, bytes_delivered=bytes_delivered)
+        for field_name in DELIVERY_RATIO_FIELD_NAMES:
+            dataset_totals[field_name] = _jsonable_float(fields[field_name])
+
+    with totals_file_path.open(mode="w") as io:
+        json.dump(obj=all_dataset_totals, fp=io, indent=2, sort_keys=True)
+
+
+@beartype
+def generate_archive_summaries(
+    *,
+    cache_directory: str | pathlib.Path | None = None,
+    asset_types_in_order: tuple[str, ...] | list[str] | None = None,
+    privacy_threshold_minimum: int = 50,
+) -> None:
+    """
+    Generate archive-wide summaries and add an experimental archive delivery ratio summary.
+
+    This is a DANDI-specific wrapper around the generic ``s3_log_extraction`` archive summaries. After the upstream
+    archive summaries are written, an ``archive/delivery_ratio.tsv`` is written holding the asset-weighted delivery
+    ratio percentiles plus the volume-weighted ratio, pooled across every asset in every Dandiset. The single row
+    always contains all six columns, with ``NaN`` when the archive has no usable asset.
+
+    Parameters
+    ----------
+    cache_directory : path-like, optional
+        The top-level cache directory from which the summary directory is derived.
+        If not provided, the default cache directory is used.
+    asset_types_in_order : sequence of str, optional
+        Preferred output column ordering for known asset types in the archive ``by_asset_type_per_week.tsv``.
+    privacy_threshold_minimum : int
+        Minimum disclosure threshold for privacy-rounded request and download values. Default is ``50``.
+    """
+    s3_log_extraction.summarize.generate_archive_summaries(
+        cache_directory=cache_directory,
+        asset_types_in_order=asset_types_in_order,
+        privacy_threshold_minimum=privacy_threshold_minimum,
+    )
+
+    summary_directory = _resolve_summary_directory(cache_directory=cache_directory)
+    pooled_delivery_ratios, pooled_bytes_delivered = _pool_archive_delivery_ratios(summary_directory)
+    fields = _compute_delivery_ratio_fields(
+        delivery_ratios=pooled_delivery_ratios, bytes_delivered=pooled_bytes_delivered
+    )
+
+    archive_directory = summary_directory / "archive"
+    archive_directory.mkdir(exist_ok=True)
+    summary_table = pandas.DataFrame(
+        data={field_name: [fields[field_name]] for field_name in DELIVERY_RATIO_FIELD_NAMES}
+    )
+    summary_table.to_csv(
+        path_or_buf=archive_directory / "delivery_ratio.tsv", mode="w", sep="\t", header=True, index=False
+    )
+
+
+@beartype
+def generate_archive_totals(
+    *,
+    cache_directory: str | pathlib.Path | None = None,
+    privacy_threshold_minimum: int = 50,
+) -> None:
+    """
+    Generate archive-wide totals and augment them with experimental delivery ratio fields.
+
+    This is a DANDI-specific wrapper around the generic ``s3_log_extraction`` archive totals. After the upstream
+    ``archive_totals.json`` is written, it gains the asset-weighted delivery ratio percentiles plus the
+    volume-weighted ratio, pooled across every asset in every Dandiset. All fields are ``null`` when the archive has
+    no usable asset.
+
+    Parameters
+    ----------
+    cache_directory : path-like, optional
+        The top-level cache directory from which the summary directory is derived.
+        If not provided, the default cache directory is used.
+    privacy_threshold_minimum : int
+        Minimum disclosure threshold for privacy-rounded request and download totals. Default is ``50``.
+    """
+    s3_log_extraction.summarize.generate_archive_totals(
+        cache_directory=cache_directory, privacy_threshold_minimum=privacy_threshold_minimum
+    )
+
+    summary_directory = _resolve_summary_directory(cache_directory=cache_directory)
+    pooled_delivery_ratios, pooled_bytes_delivered = _pool_archive_delivery_ratios(summary_directory)
+    fields = _compute_delivery_ratio_fields(
+        delivery_ratios=pooled_delivery_ratios, bytes_delivered=pooled_bytes_delivered
+    )
+
+    archive_totals_file_path = summary_directory / "archive_totals.json"
+    archive_totals = json.loads(archive_totals_file_path.read_text())
+    for field_name in DELIVERY_RATIO_FIELD_NAMES:
+        archive_totals[field_name] = _jsonable_float(fields[field_name])
+
+    with archive_totals_file_path.open(mode="w") as io:
+        json.dump(obj=archive_totals, fp=io, indent=2, sort_keys=True)
