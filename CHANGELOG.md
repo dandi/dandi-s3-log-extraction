@@ -15,6 +15,10 @@
 - Refactored `generate_dandiset_totals` to derive the summary directory from `cache_directory`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Renamed the `--directory` CLI flag to `--cache` in the update commands. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
+### 📝 Documentation
+
+- Documented the experimental delivery ratio metric in the `README.md`. ([#86](https://github.com/dandi/dandi-s3-log-extraction/pull/86))
+
 ### 🔩 Dependency Updates
 
 - Updated compatibility for the latest `s3-log-extraction` release by pinning the lower bound to `>=1.9.2` and adapting extractor tests and summary columns. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
