@@ -88,4 +88,3 @@ The metric appears in three places:
 The percentiles are asset weighted, where each asset contributes one ratio. The `delivery_ratio_weighted` field is volume weighted, computed as the total bytes delivered over the total asset size. The gap between the weighted value and the median is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.
 
 These fields are produced by `dandis3logextraction update totals` and `dandis3logextraction update summaries --mode archive`, which wrap the generic totals and summary steps.
-
