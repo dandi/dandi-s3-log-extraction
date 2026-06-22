@@ -85,6 +85,8 @@ The metric appears in three places:
 - A per-asset `delivery_ratio` column in each Dandiset's `by_asset.tsv`.
 - Per-Dandiset percentiles in `totals.json`, and archive wide percentiles in `archive_totals.json` and `archive/delivery_ratio.tsv`. The reported fields are `delivery_ratio_p10`, `delivery_ratio_p25`, `delivery_ratio_p50`, `delivery_ratio_p75`, `delivery_ratio_p90`, and `delivery_ratio_weighted`.
 
+Percentiles are reported at the Dandiset and archive level, rather than a single average, because per-asset delivery ratios are highly skewed. Within one Dandiset some assets are downloaded close to once while others are streamed many times over, so a mean would be dominated by a few heavily streamed assets and hide that spread. The five percentiles describe the shape of the distribution compactly, and the exact per-asset values are still available in `by_asset.tsv` for anyone who needs them.
+
 The percentiles are asset weighted, where each asset contributes one ratio. The `delivery_ratio_weighted` field is volume weighted, computed as the total bytes delivered over the total asset size. The gap between the weighted value and the median is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.
 
 These fields are produced by `dandis3logextraction update totals` and `dandis3logextraction update summaries --mode archive`, which wrap the generic totals and summary steps.
