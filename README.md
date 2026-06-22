@@ -80,7 +80,7 @@ The delivery ratio is an experimental, DANDI-only signal of streaming versus dow
 
 For each asset it is the total bytes delivered across all logged GET requests divided by the asset's true size in bytes:
 
-$$r_a = \frac{\sum_{i \in G_a} b_i}{s_a}$$
+$$r_a = \frac{1}{s_a} \sum\limits_{i \in G_a} b_i$$
 
 where $G_a$ is the set of logged GET requests for asset $a$, $b_i$ is the bytes delivered in request $i$, and $s_a$ is the asset's true size in bytes.
 
@@ -95,6 +95,6 @@ Percentiles are reported at the Dandiset and archive level, rather than a single
 
 The percentiles are asset weighted, where each asset contributes one ratio $r_a$ regardless of its size. The `delivery_ratio_weighted` field is instead volume weighted, computed as the total bytes delivered over the total asset size across the usable assets $A$:
 
-$$r_{\text{vol}} = \frac{\sum_{a \in A} \sum_{i \in G_a} b_i}{\sum_{a \in A} s_a}$$
+$$r_{\text{vol}} = \frac{\sum\limits_{a \in A} \sum\limits_{i \in G_a} b_i}{\sum\limits_{a \in A} s_a}$$
 
 The gap between this volume-weighted value $r_{\text{vol}}$ and the median $p_{50}$ is a deliberate heterogeneity signal, so both are reported. Assets with a missing or zero size are excluded from the computation. A Dandiset with no usable asset reports empty values for all six fields.
