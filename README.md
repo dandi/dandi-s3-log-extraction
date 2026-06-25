@@ -42,22 +42,14 @@ Usage on the DANDI archive logs requires a bit more customization than the gener
 
 Begin by ensuring a special required environment variable is set:
 
-**S3_LOG_EXTRACTION_PASSWORD**
-  - Various sensitive information on Drogon is encrypted using this password, including:
-    - the IP index and geolocation caches.
-
-This allows us to store full IP information in a persistent way (in case we need to go back and do a lookup) while still being secure.
-
-```bash
-export S3_LOG_EXTRACTION_PASSWORD="ask_yarik_or_cody_for_password"
-```
-
 **IPS_TO_SKIP**
   - A regular expression matching all associated Drogon IPs, which are skipped during extraction.
 
 ```bash
 export IPS_TO_SKIP="ask_yarik_or_cody_for_regex"
 ```
+
+The `S3_LOG_EXTRACTION_PASSWORD` is no longer required by this package. It is only relevant if you opt in to the upstream `s3-log-extraction` encryption of the IP index and geolocation caches.
 
 In fresh environments, the cache should be specified as:
 
