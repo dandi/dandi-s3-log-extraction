@@ -44,13 +44,19 @@ Begin by ensuring a special required environment variable is set:
 
 **S3_LOG_EXTRACTION_PASSWORD**
   - Various sensitive information on Drogon is encrypted using this password, including:
-    - the regular expression for all associated Drogon IPs.
     - the IP index and geolocation caches.
 
 This allows us to store full IP information in a persistent way (in case we need to go back and do a lookup) while still being secure.
 
 ```bash
 export S3_LOG_EXTRACTION_PASSWORD="ask_yarik_or_cody_for_password"
+```
+
+**IPS_TO_SKIP**
+  - A regular expression matching all associated Drogon IPs, which are skipped during extraction.
+
+```bash
+export IPS_TO_SKIP="ask_yarik_or_cody_for_regex"
 ```
 
 In fresh environments, the cache should be specified as:

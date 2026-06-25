@@ -58,18 +58,16 @@ def test_handle_max_workers_exceeds_cpu_count() -> None:
 
 
 @pytest.mark.ai_generated
-@pytest.mark.skipif(
-    not os.environ.get("S3_LOG_EXTRACTION_PASSWORD"),
-    reason="S3_LOG_EXTRACTION_PASSWORD not set",
-)
-def test_dandi_remote_extractor_init(tmp_path: pathlib.Path) -> None:
+def test_dandi_remote_extractor_init(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """DandiRemoteS3LogAccessExtractor.__init__ sets expected attributes."""
     from dandi_s3_log_extraction.extractors import DandiRemoteS3LogAccessExtractor
+
+    monkeypatch.setenv("IPS_TO_SKIP", "192.168.0.1|10.0.0.1")
 
     extractor = DandiRemoteS3LogAccessExtractor(cache_directory=tmp_path)
     assert extractor._relative_script_path.exists()
     assert "IPS_TO_SKIP_REGEX" in extractor._awk_env
-    assert len(extractor._awk_env["IPS_TO_SKIP_REGEX"]) > 0
+    assert extractor._awk_env["IPS_TO_SKIP_REGEX"] == "192.168.0.1|10.0.0.1"
     assert extractor.use_encryption is False
 
 
