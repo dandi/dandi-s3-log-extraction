@@ -231,6 +231,7 @@ def _update_summaries_cli(
     """Generate condensed summaries of activity."""
     match mode:
         case "archive":
+            # TODO: replace with error message instructing user to use s3logextraction directly
             s3_log_extraction.summarize.generate_archive_summaries(cache_directory=cache_directory)
         case _:
             pick_as_list = pick.split(",") if pick is not None else None
