@@ -2,6 +2,10 @@
 
 # Upcoming
 
+### ⚠️ Breaking
+
+- Replaced the encrypted `DROGON_IP_REGEX_ENCRYPTED` constant with an unencrypted `IPS_TO_SKIP` environment variable for the regular expression of Drogon IPs to skip during extraction. The `S3_LOG_EXTRACTION_PASSWORD` is no longer required by this package. ([#87](https://github.com/dandi/dandi-s3-log-extraction/pull/87))
+
 ### 🚀 Enhancement
 
 - Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
