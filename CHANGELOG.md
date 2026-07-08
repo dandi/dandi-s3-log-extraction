@@ -9,7 +9,7 @@
 
 ### 🚀 Enhancement
 
-- `--content-id-to-usage-dandiset-path-url` (and the corresponding `content_id_to_usage_dandiset_path_url` keyword argument) now also accepts a local file path to the JSON Lines cache for offline use. Content IDs used by multiple Dandisets are now summarized under each Dandiset with the correct asset path, and malformed cache lines are skipped with a warning. ([#92](https://github.com/dandi/dandi-s3-log-extraction/pull/92))
+- `--content-id-to-usage-dandiset-path-url` (and the corresponding `content_id_to_usage_dandiset_path_url` keyword argument) now also accepts a local file path to the JSON Lines cache for offline use. Malformed cache lines are skipped with a warning. ([#92](https://github.com/dandi/dandi-s3-log-extraction/pull/92))
 - Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--cache-directory` to `dandis3logextraction extract` so remote extraction can use a custom cache directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--inventory` to `dandis3logextraction extract --mode remote` so extraction can use a local S3 Inventory directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))

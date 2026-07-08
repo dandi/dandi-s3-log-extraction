@@ -73,7 +73,7 @@ def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_content_id_with_multiple_usage_paths(tmp_path: pathlib.Path) -> None:
-    """A content ID used by multiple Dandisets is summarized under each with its own asset path."""
+    """A content ID used by multiple Dandisets is summarized under its first listed association."""
     extraction_directory = _initialize_cache(tmp_path)
 
     shared_id = "5a6b7c8d-1234-5678-9abc-def012345678"
@@ -94,8 +94,7 @@ def test_content_id_with_multiple_usage_paths(tmp_path: pathlib.Path) -> None:
     by_asset_first = pandas.read_table(filepath_or_buffer=tmp_path / "summaries" / "000001" / "by_asset.tsv")
     assert by_asset_first["asset_path"].tolist() == ["sub-A/shared.nwb"]
 
-    by_asset_second = pandas.read_table(filepath_or_buffer=tmp_path / "summaries" / "000002" / "by_asset.tsv")
-    assert by_asset_second["asset_path"].tolist() == ["sub-B/shared.nwb"]
+    assert not (tmp_path / "summaries" / "000002").exists()
 
 
 @pytest.mark.ai_generated

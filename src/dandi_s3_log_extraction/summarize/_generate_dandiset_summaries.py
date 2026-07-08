@@ -85,7 +85,7 @@ def generate_dandiset_summaries(
     )
 
     if unassociated:
-        dandiset_id_to_local_content_directories = _get_undetermined_dandi_asset_info(
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(
             content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
             cache_directory=cache_directory,
         )
@@ -97,14 +97,12 @@ def generate_dandiset_summaries(
             blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
             summary_directory=summary_directory,
             ip_to_region=ip_to_region,
-            blob_id_to_asset_path=dict(),
+            blob_id_to_asset_path=content_id_to_dandiset_path,
         )
     else:
-        dandiset_id_to_local_content_directories, dandiset_id_to_content_id_to_asset_path = (
-            _get_determinable_dandi_asset_info(
-                content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
-                cache_directory=cache_directory,
-            )
+        dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_determinable_dandi_asset_info(
+            content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
+            cache_directory=cache_directory,
         )
 
         client = dandi.dandiapi.DandiAPIClient(api_url=api_url)
@@ -138,7 +136,7 @@ def generate_dandiset_summaries(
                     blob_directories=blob_directories,
                     summary_directory=summary_directory,
                     ip_to_region=ip_to_region,
-                    blob_id_to_asset_path=dandiset_id_to_content_id_to_asset_path.get(dandiset_id, dict()),
+                    blob_id_to_asset_path=content_id_to_dandiset_path,
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -149,7 +147,7 @@ def generate_dandiset_summaries(
                         blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
                         summary_directory=summary_directory,
                         ip_to_region=ip_to_region,
-                        blob_id_to_asset_path=dandiset_id_to_content_id_to_asset_path.get(dandiset_id, dict()),
+                        blob_id_to_asset_path=content_id_to_dandiset_path,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
                 ]
@@ -177,7 +175,8 @@ def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[st
 
     Each line of the cache is a JSON object of the form
     ``{"<content_id>": {"<dandiset_id>": "<asset_path>"}}``.
-    A single content ID may map to multiple Dandiset paths.
+    The parsed lines are merged into a single dictionary matching the structure
+    of the previous gzipped JSON mapping.
 
     Parameters
     ----------
@@ -231,45 +230,47 @@ def _get_determinable_dandi_asset_info(
     *,
     content_id_to_usage_dandiset_path_url: str,
     cache_directory: pathlib.Path,
-) -> tuple[dict[str, list[pathlib.Path]], dict[str, dict[str, str]]]:
+) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
 
     content_id_to_usage_dandiset_path = _load_content_id_to_usage_dandiset_path(content_id_to_usage_dandiset_path_url)
 
-    dandiset_id_to_content_id_to_asset_path: dict[str, dict[str, str]] = collections.defaultdict(dict)
+    content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)
-    for content_id, usage_dandiset_id_to_path in tqdm.tqdm(
+    for content_id, unique_dandiset_id_and_path in tqdm.tqdm(
         iterable=content_id_to_usage_dandiset_path.items(),
         total=len(content_id_to_usage_dandiset_path),
         desc="Mapping unique blob IDs to local paths",
         unit="blobs",
         smoothing=0,
     ):
-        for dandiset_id, usage_path in usage_dandiset_id_to_path.items():
-            local_content_directory = (
-                extraction_directory / "zarr" / content_id
-                if ".zarr" in usage_path
-                else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
-            )
-            dandiset_id_to_content_id_to_asset_path[dandiset_id][content_id] = usage_path
-            dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
+        dandiset_id, unique_path = next(iter(unique_dandiset_id_and_path.items()))
 
-    return dandiset_id_to_local_content_directories, dandiset_id_to_content_id_to_asset_path
+        local_content_directory = (
+            extraction_directory / "zarr" / content_id
+            if ".zarr" in unique_path
+            else extraction_directory / "blobs" / content_id[:3] / content_id[3:6] / content_id
+        )
+        content_id_to_dandiset_path[content_id] = unique_path
+        dandiset_id_to_local_content_directories[dandiset_id].append(local_content_directory)
+
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
 def _get_undetermined_dandi_asset_info(
     *,
     content_id_to_usage_dandiset_path_url: str,
     cache_directory: pathlib.Path,
-) -> dict[str, list[pathlib.Path]]:
+) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
 
     content_id_to_usage_dandiset_path = _load_content_id_to_usage_dandiset_path(content_id_to_usage_dandiset_path_url)
 
+    content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)
 
-    # The usage cache is 'bottom-up' from provided content ID mappings from the DANDI Cache
-    # Here, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
+    # The previous loop is 'bottom-up' from provided content ID mappings from the DANDI Cache
+    # Next, do a 'top-down' search over the entire extraction cache to find any uncaught IDs
     batch_size = 1_000_000
     tqdm_iterable = tqdm.tqdm(
         iterable=itertools.batched(iterable=extraction_directory.rglob(pattern="ips.txt"), n=batch_size),
@@ -300,7 +301,7 @@ def _get_undetermined_dandi_asset_info(
 
             dandiset_id_to_local_content_directories["undetermined"].append(local_content_directory)
 
-    return dandiset_id_to_local_content_directories
+    return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
 def _summarize_dandiset(
