@@ -54,6 +54,7 @@ def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path) -> None:
     mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.jsonl"
     mapping_lines = [
         json.dumps({blob_id: {"000001": "sub-A/sub-A.nwb"}}),
+        "",  # Blank lines are ignored
         json.dumps({zarr_id: {"000001": "sub-B/sub-B.ome.zarr"}}),
     ]
     mapping_file_path.write_text("\n".join(mapping_lines) + "\n")
