@@ -1,10 +1,10 @@
 import collections
 import concurrent.futures
 import datetime
-import gzip
 import itertools
 import json
 import pathlib
+import warnings
 
 import pandas
 import requests
@@ -14,6 +14,10 @@ from beartype import beartype
 
 from .._parallel._utils import _handle_max_workers
 
+DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
+    "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
+    "derivatives/derivatives/content_id_to_usage_dandiset_path.jsonl"
+)
 ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Video", "Miscellaneous")
 NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
@@ -49,8 +53,9 @@ def generate_dandiset_summaries(
     skip : list of strings, optional
         A list of Dandiset IDs to exclude when generating summaries.
     content_id_to_usage_dandiset_path_url : str, optional
-        URL to retrieve the mapping of content IDs to Dandiset paths.
+        URL or local file path of the JSON Lines cache mapping content IDs to their usage Dandiset paths.
         Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository.
+        Point this to a local copy of the file to avoid fetching it from the network.
     api_url : str, optional
         Base API URL of the server to interact with.
         Defaults to using the main DANDI API server.
@@ -71,9 +76,8 @@ def generate_dandiset_summaries(
         raise ValueError(message)
     max_workers = _handle_max_workers(workers=workers)
 
-    content_id_to_usage_dandiset_path_url = content_id_to_usage_dandiset_path_url or (
-        "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
-        "refs/heads/min/derivatives/content_id_to_usage_dandiset_path.min.json.gz"
+    content_id_to_usage_dandiset_path_url = (
+        content_id_to_usage_dandiset_path_url or DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL
     )
 
     ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
@@ -165,6 +169,63 @@ def generate_dandiset_summaries(
                 )
 
 
+def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[str, str]]:
+    """
+    Load the JSON Lines cache mapping content IDs to their usage Dandiset paths.
+
+    Each line of the cache is a JSON object of the form
+    ``{"<content_id>": {"<dandiset_id>": "<asset_path>"}}``.
+    The parsed lines are merged into a single dictionary matching the structure
+    of the previous gzipped JSON mapping.
+
+    Parameters
+    ----------
+    source : str
+        Either an HTTP(S) URL or a path to a local copy of the JSON Lines file.
+
+    Returns
+    -------
+    dict
+        Mapping of each content ID to its Dandiset IDs and asset paths.
+    """
+    if source.startswith("http://") or source.startswith("https://"):
+        response = requests.get(source)
+        if response.status_code != 200:
+            message = (
+                f"Failed to retrieve content ID to usage path mapping from {source} - "
+                f"status code {response.status_code}: {response.text}"
+            )
+            raise RuntimeError(message)
+        lines = response.text.splitlines()
+    else:
+        local_file_path = pathlib.Path(source)
+        if not local_file_path.exists():
+            message = f"Failed to load content ID to usage path mapping - no such file {local_file_path}."
+            raise FileNotFoundError(message)
+        lines = local_file_path.read_text().splitlines()
+
+    content_id_to_usage_dandiset_path: dict[str, dict[str, str]] = dict()
+    for line_index, line in enumerate(lines):
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+
+        try:
+            entry = json.loads(stripped_line)
+        except json.JSONDecodeError:
+            message = (
+                f"Skipping malformed JSON on line {line_index + 1} of the content ID to usage path mapping "
+                f"from {source}."
+            )
+            warnings.warn(message=message, stacklevel=2)
+            continue
+
+        for content_id, usage_dandiset_id_to_path in entry.items():
+            content_id_to_usage_dandiset_path.setdefault(content_id, dict()).update(usage_dandiset_id_to_path)
+
+    return content_id_to_usage_dandiset_path
+
+
 def _get_determinable_dandi_asset_info(
     *,
     content_id_to_usage_dandiset_path_url: str,
@@ -172,14 +233,7 @@ def _get_determinable_dandi_asset_info(
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
 
-    response = requests.get(content_id_to_usage_dandiset_path_url)
-    if response.status_code != 200:
-        message = (
-            f"Failed to retrieve content ID to usage path mapping from {content_id_to_usage_dandiset_path_url} - "
-            f"status code {response.status_code}: {response.json()}"
-        )
-        raise RuntimeError(message)
-    content_id_to_usage_dandiset_path = json.loads(gzip.decompress(data=response.content))
+    content_id_to_usage_dandiset_path = _load_content_id_to_usage_dandiset_path(content_id_to_usage_dandiset_path_url)
 
     content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)
@@ -210,14 +264,7 @@ def _get_undetermined_dandi_asset_info(
 ) -> tuple[dict[str, list[pathlib.Path]], dict[str, str]]:
     extraction_directory = cache_directory / "extraction"
 
-    response = requests.get(content_id_to_usage_dandiset_path_url)
-    if response.status_code != 200:
-        message = (
-            f"Failed to retrieve content ID to usage path mapping from {content_id_to_usage_dandiset_path_url} - "
-            f"status code {response.status_code}: {response.json()}"
-        )
-        raise RuntimeError(message)
-    content_id_to_usage_dandiset_path = json.loads(gzip.decompress(data=response.content))
+    content_id_to_usage_dandiset_path = _load_content_id_to_usage_dandiset_path(content_id_to_usage_dandiset_path_url)
 
     content_id_to_dandiset_path: dict[str, str] = dict()
     dandiset_id_to_local_content_directories = collections.defaultdict(list)

@@ -4,10 +4,12 @@
 
 ### ⚠️ Breaking
 
+- Switched the summary update step to the JSON Lines usage path cache from the `derivatives` branch of the `dandi-cache/content-id-to-usage-dandiset-path` repository. The previous gzipped JSON mapping on the `min` branch is no longer published upstream. ([#92](https://github.com/dandi/dandi-s3-log-extraction/pull/92))
 - Replaced the encrypted `DROGON_IP_REGEX_ENCRYPTED` constant with an unencrypted `IPS_TO_SKIP` environment variable for the regular expression of Drogon IPs to skip during extraction. The `S3_LOG_EXTRACTION_PASSWORD` is no longer required by this package. ([#87](https://github.com/dandi/dandi-s3-log-extraction/pull/87))
 
 ### 🚀 Enhancement
 
+- `--content-id-to-usage-dandiset-path-url` (and the corresponding `content_id_to_usage_dandiset_path_url` keyword argument) now also accepts a local file path to the JSON Lines cache for offline use. Malformed cache lines are skipped with a warning. ([#92](https://github.com/dandi/dandi-s3-log-extraction/pull/92))
 - Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--cache-directory` to `dandis3logextraction extract` so remote extraction can use a custom cache directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--inventory` to `dandis3logextraction extract --mode remote` so extraction can use a local S3 Inventory directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
