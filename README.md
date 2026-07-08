@@ -69,3 +69,11 @@ dandis3logextraction update totals
 dandis3logextraction update summaries --mode archive
 dandis3logextraction update totals --mode archive
 ```
+
+The `update summaries` step maps content IDs from the S3 logs to their usage Dandiset paths.
+This mapping is fetched as a JSON Lines file from the [dandi-cache](https://github.com/dandi-cache/content-id-to-usage-dandiset-path) GitHub repository.
+To use a previously downloaded copy of the file (for example, when running without network access), point the option at a local path:
+
+```bash
+dandis3logextraction update summaries --content-id-to-usage-dandiset-path-url /path/to/content_id_to_usage_dandiset_path.jsonl
+```
