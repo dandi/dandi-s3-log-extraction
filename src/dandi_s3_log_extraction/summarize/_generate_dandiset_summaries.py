@@ -11,6 +11,7 @@ import requests
 import s3_log_extraction
 import tqdm
 from beartype import beartype
+from s3_log_extraction.ip_utils import is_cloud_service_or_vpn_label
 
 from .._parallel._utils import _handle_max_workers
 
@@ -338,6 +339,7 @@ def _summarize_dandiset(
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "requester_count.tsv",
+        ip_to_region=ip_to_region,
     )
 
 
@@ -755,6 +757,7 @@ def _summarize_dandiset_unique_requester_count(
     *,
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
+    ip_to_region: dict[str, str] | None = None,
     modulo: int = 20,
     minimum: int = 50,
 ) -> None:
@@ -762,7 +765,8 @@ def _summarize_dandiset_unique_requester_count(
     Compute and save the privacy-rounded unique requester count for a Dandiset.
 
     Reads all ``ips.txt`` files from the given blob directories, counts the
-    number of unique IPs across the entire Dandiset, rounds the result via
+    number of unique IPs across the entire Dandiset (excluding IPs attributed to
+    known cloud/hosting/VPN services), rounds the result via
     :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
 
     Parameters
@@ -771,13 +775,18 @@ def _summarize_dandiset_unique_requester_count(
         Paths to the per-blob extraction directories containing ``ips.txt`` files.
     summary_file_path : pathlib.Path
         Destination file where the rounded count (as a string) will be written.
+    ip_to_region : dict of str to str, optional
+        Mapping of IP addresses to their region (or cloud service) labels, used to
+        exclude cloud/hosting/VPN service IPs from the requester count.
     modulo : int, optional
         Granularity for rounding. Default is ``20``.
     minimum : int, optional
         Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
         Default is ``50``.
     """
+    ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
+    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
 
     if not unique_ips:
         return
@@ -791,6 +800,7 @@ def _summarize_archive_unique_requester_count(
     *,
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
+    ip_to_region: dict[str, str] | None = None,
     modulo: int = 20,
     minimum: int = 50,
 ) -> None:
@@ -798,7 +808,8 @@ def _summarize_archive_unique_requester_count(
     Compute and save the privacy-rounded unique requester count for the archive.
 
     Collects unique IPs across all provided blob directories (a true union
-    across all Dandisets), rounds the result, and writes the value to ``summary_file_path``.
+    across all Dandisets), excludes IPs attributed to known cloud/hosting/VPN
+    services, rounds the result, and writes the value to ``summary_file_path``.
 
     Parameters
     ----------
@@ -806,13 +817,18 @@ def _summarize_archive_unique_requester_count(
         All per-blob extraction directories from all Dandisets.
     summary_file_path : pathlib.Path
         Destination file where the rounded count will be written.
+    ip_to_region : dict of str to str, optional
+        Mapping of IP addresses to their region (or cloud service) labels, used to
+        exclude cloud/hosting/VPN service IPs from the requester count.
     modulo : int, optional
         Granularity for rounding. Default is ``20``.
     minimum : int, optional
         Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
         Default is ``50``.
     """
+    ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
+    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
 
     if not unique_ips:
         return

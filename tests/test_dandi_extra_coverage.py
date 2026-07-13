@@ -480,6 +480,34 @@ def test_summarize_dandiset_unique_requester_count_missing_blob_dir(tmp_path: pa
     assert not summary_file_path.exists()
 
 
+@pytest.mark.ai_generated
+def test_summarize_dandiset_unique_requester_count_excludes_cloud_service_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count excludes IPs attributed to cloud/hosting/VPN services."""
+    blob_dir = tmp_path / "blob1"
+    blob_dir.mkdir()
+    # 55 "real" unique IPs plus a handful of cloud service IPs that should be excluded
+    real_ips = [f"192.0.2.{i}" for i in range(55)]
+    cloud_ips = ["198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"]
+    (blob_dir / "ips.txt").write_text("\n".join(real_ips + cloud_ips))
+
+    ip_to_region = {
+        "198.51.100.1": "AWS/us-east-2",
+        "198.51.100.2": "GCP/us-central1",
+        "198.51.100.3": "GitHub",
+        "198.51.100.4": "VPN",
+    }
+
+    summary_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+        ip_to_region=ip_to_region,
+    )
+
+    # 55 real unique IPs, rounded to nearest 20 = 60 (cloud service IPs excluded from the count)
+    assert summary_file_path.read_text() == "60"
+
+
 # ─── _summarize_archive_unique_requester_count ────────────────────────────────
 
 
@@ -514,3 +542,27 @@ def test_summarize_archive_unique_requester_count_empty(tmp_path: pathlib.Path) 
     )
 
     assert not archive_file.exists()
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count excludes IPs attributed to cloud/hosting/VPN services."""
+    blob_dir1 = tmp_path / "blob1"
+    blob_dir1.mkdir()
+    (blob_dir1 / "ips.txt").write_text("\n".join(f"192.0.2.{i}" for i in range(30)))
+
+    blob_dir2 = tmp_path / "blob2"
+    blob_dir2.mkdir()
+    (blob_dir2 / "ips.txt").write_text("\n".join(f"192.0.3.{i}" for i in range(25)) + "\n203.0.113.1\n203.0.113.2\n")
+
+    ip_to_region = {"203.0.113.1": "AWS/us-east-1", "203.0.113.2": "GitHub"}
+
+    archive_file = tmp_path / "archive" / "requester_count.tsv"
+    _summarize_archive_unique_requester_count(
+        blob_directories=[blob_dir1, blob_dir2],
+        summary_file_path=archive_file,
+        ip_to_region=ip_to_region,
+    )
+
+    # 55 real unique IPs, rounded to nearest 20 = 60 (cloud service IPs excluded from the count)
+    assert archive_file.read_text() == "60"
