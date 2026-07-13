@@ -35,6 +35,13 @@ jobs:
       - name: Install local checkout
         run: pip install --no-cache-dir .[all] --group all
 
+      # TODO: remove once dandi/s3-log-extraction#291 is merged and released, and the
+      # `s3_log_extraction` lower bound in pyproject.toml is raised to that release.
+      - name: TEMP - install s3_log_extraction from unreleased dandi/s3-log-extraction#291 branch
+        run: |
+          pip install --no-cache-dir --force-reinstall --no-deps \
+            "git+https://github.com/dandi/s3-log-extraction.git@claude/exclude-cloud-ips-requesters-ajnhie"
+
       - name: Display installed packages and their sources for debugging
         run: pip list
 

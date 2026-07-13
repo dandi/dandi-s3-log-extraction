@@ -11,23 +11,9 @@ import requests
 import s3_log_extraction
 import tqdm
 from beartype import beartype
+from s3_log_extraction.ip_utils import is_cloud_service_or_vpn_label
 
 from .._parallel._utils import _handle_max_workers
-
-try:
-    # Added in s3_log_extraction>=1.11 (dandi/s3-log-extraction#291); once the pinned lower bound
-    # in pyproject.toml is raised to a release that includes it, this fallback can be removed.
-    from s3_log_extraction.ip_utils import is_cloud_service_or_vpn_label
-except ImportError:  # pragma: no cover
-    _EXCLUDED_REGION_LABELS = frozenset(["VPN", "GitHub", "unknown", "undetermined", "missing", "bogon"])
-    _KNOWN_CLOUD_SERVICES = ("GitHub", "AWS", "GCP", "VPN")
-
-    def is_cloud_service_or_vpn_label(region_label: str) -> bool:
-        """Return True if a region/service label refers to a known cloud service or VPN provider."""
-        if region_label in _EXCLUDED_REGION_LABELS:
-            return True
-        return any(region_label.startswith(f"{service_name}/") for service_name in _KNOWN_CLOUD_SERVICES)
-
 
 DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
     "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
