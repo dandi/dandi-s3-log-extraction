@@ -9,6 +9,7 @@
 
 ### 🚀 Enhancement
 
+- Excluded IPs attributed to known cloud/hosting/VPN services (AWS, GCP, GitHub, VPN) from the unique requester counts in Dandiset and archive summaries. Delegates to `s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label` when available, with an equivalent local fallback for older installed versions. ([#93](https://github.com/dandi/dandi-s3-log-extraction/pull/93))
 - `--content-id-to-usage-dandiset-path-url` (and the corresponding `content_id_to_usage_dandiset_path_url` keyword argument) now also accepts a local file path to the JSON Lines cache for offline use. Malformed cache lines are skipped with a warning. ([#92](https://github.com/dandi/dandi-s3-log-extraction/pull/92))
 - Added `download` to `_dandi_extraction.awk` so extraction writes `download.txt` alongside the other per-request outputs. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Added `--cache-directory` to `dandis3logextraction extract` so remote extraction can use a custom cache directory. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))

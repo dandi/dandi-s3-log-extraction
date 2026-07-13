@@ -14,6 +14,21 @@ from beartype import beartype
 
 from .._parallel._utils import _handle_max_workers
 
+try:
+    # Added in s3_log_extraction>=1.11 (dandi/s3-log-extraction#291); once the pinned lower bound
+    # in pyproject.toml is raised to a release that includes it, this fallback can be removed.
+    from s3_log_extraction.ip_utils import is_cloud_service_or_vpn_label
+except ImportError:  # pragma: no cover
+    _EXCLUDED_REGION_LABELS = frozenset(["VPN", "GitHub", "unknown", "undetermined", "missing", "bogon"])
+    _KNOWN_CLOUD_SERVICES = ("GitHub", "AWS", "GCP", "VPN")
+
+    def is_cloud_service_or_vpn_label(region_label: str) -> bool:
+        """Return True if a region/service label refers to a known cloud service or VPN provider."""
+        if region_label in _EXCLUDED_REGION_LABELS:
+            return True
+        return any(region_label.startswith(f"{service_name}/") for service_name in _KNOWN_CLOUD_SERVICES)
+
+
 DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
     "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
     "derivatives/derivatives/content_id_to_usage_dandiset_path.jsonl"
@@ -23,17 +38,11 @@ NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
-# Region labels (or region label prefixes, e.g. "AWS/us-east-2") assigned by
-# `s3_log_extraction.ip_utils` to IPs identified as belonging to a cloud/hosting/VPN
-# service rather than to an individual requester.
-CLOUD_SERVICE_REGION_PREFIXES = ("AWS", "GCP", "GitHub", "VPN")
-
 
 def _is_cloud_service_ip(*, ip: str, ip_to_region: dict[str, str]) -> bool:
     """Return True if the given IP is attributed to a known cloud/hosting/VPN service."""
     region = ip_to_region.get(ip, "")
-    service_label = region.split("/", 1)[0]
-    return service_label in CLOUD_SERVICE_REGION_PREFIXES
+    return is_cloud_service_or_vpn_label(region)
 
 
 @beartype

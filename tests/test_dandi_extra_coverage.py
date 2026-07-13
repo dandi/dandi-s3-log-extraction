@@ -555,7 +555,7 @@ def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp
     blob_dir2.mkdir()
     (blob_dir2 / "ips.txt").write_text("\n".join(f"192.0.3.{i}" for i in range(25)) + "\n203.0.113.1\n203.0.113.2\n")
 
-    ip_to_region = {"203.0.113.1": "AWS", "203.0.113.2": "GitHub"}
+    ip_to_region = {"203.0.113.1": "AWS/us-east-1", "203.0.113.2": "GitHub"}
 
     archive_file = tmp_path / "archive" / "requester_count.tsv"
     _summarize_archive_unique_requester_count(
