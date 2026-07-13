@@ -25,12 +25,6 @@ MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".tr
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 
-def _is_cloud_service_ip(*, ip: str, ip_to_region: dict[str, str]) -> bool:
-    """Return True if the given IP is attributed to a known cloud/hosting/VPN service."""
-    region = ip_to_region.get(ip, "")
-    return is_cloud_service_or_vpn_label(region)
-
-
 @beartype
 def generate_dandiset_summaries(
     *,
@@ -792,7 +786,7 @@ def _summarize_dandiset_unique_requester_count(
     """
     ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {ip for ip in unique_ips if not _is_cloud_service_ip(ip=ip, ip_to_region=ip_to_region)}
+    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
 
     if not unique_ips:
         return
@@ -834,7 +828,7 @@ def _summarize_archive_unique_requester_count(
     """
     ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {ip for ip in unique_ips if not _is_cloud_service_ip(ip=ip, ip_to_region=ip_to_region)}
+    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
 
     if not unique_ips:
         return
