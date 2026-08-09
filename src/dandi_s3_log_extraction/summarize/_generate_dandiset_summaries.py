@@ -25,7 +25,7 @@ VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 # Taken from the upstream package so that the DANDI summaries are published under the same privacy policy
 # as the generic ones they are aggregated with
-REGION_DISCLOSURE_THRESHOLD = s3_log_extraction.summarize._globals.REGION_DISCLOSURE_THRESHOLD
+REGION_DISCLOSURE_THRESHOLD = s3_log_extraction.summarize.REGION_DISCLOSURE_THRESHOLD
 
 
 @beartype
@@ -787,7 +787,7 @@ def _summarize_dandiset_unique_requester_count(
     unique_ips = {
         ip
         for ip in unique_ips
-        if not s3_log_extraction.ip_utils._globals._is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
     }
 
     if not unique_ips:
@@ -828,7 +828,7 @@ def _summarize_archive_unique_requester_count(
     unique_ips = {
         ip
         for ip in unique_ips
-        if not s3_log_extraction.ip_utils._globals._is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
     }
 
     if not unique_ips:
