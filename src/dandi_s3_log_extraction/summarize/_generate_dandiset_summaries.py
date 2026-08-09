@@ -11,7 +11,6 @@ import requests
 import s3_log_extraction
 import tqdm
 from beartype import beartype
-from s3_log_extraction.ip_utils import is_cloud_service_or_vpn_label
 
 from .._parallel._utils import _handle_max_workers
 
@@ -24,6 +23,10 @@ NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
+# Taken from the upstream package so that the DANDI summaries are published under the same privacy policy
+# as the generic ones they are aggregated with
+REGION_DISCLOSURE_THRESHOLD = s3_log_extraction.summarize._globals.REGION_DISCLOSURE_THRESHOLD
+
 
 @beartype
 def generate_dandiset_summaries(
@@ -35,9 +38,15 @@ def generate_dandiset_summaries(
     content_id_to_usage_dandiset_path_url: str | None = None,
     api_url: str | None = None,
     unassociated: bool = False,
+    region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
+
+    Every summary is written with its true values, except for `by_region.tsv`. That one pairs activity with
+    requester location, so it is written only when the update it carries moves more than
+    `region_disclosure_threshold` resolved regions at once. Its totals therefore drift out of step with the
+    other summaries between publications.
 
     Parameters
     ----------
@@ -62,6 +71,10 @@ def generate_dandiset_summaries(
         Defaults to using the main DANDI API server.
     unassociated : bool, optional
         Whether to generate summaries based on current undetermined status.
+    region_disclosure_threshold : int, optional
+        Number of resolved regions an update to a `by_region.tsv` must move at once to be published.
+        A resolved region is any label naming a physical place, such as `US/California`.
+        Defaults to the upstream `REGION_DISCLOSURE_THRESHOLD`.
     """
     import dandi.dandiapi
 
@@ -99,6 +112,7 @@ def generate_dandiset_summaries(
             summary_directory=summary_directory,
             ip_to_region=ip_to_region,
             blob_id_to_asset_path=content_id_to_dandiset_path,
+            region_disclosure_threshold=region_disclosure_threshold,
         )
     else:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_determinable_dandi_asset_info(
@@ -138,6 +152,7 @@ def generate_dandiset_summaries(
                     summary_directory=summary_directory,
                     ip_to_region=ip_to_region,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
+                    region_disclosure_threshold=region_disclosure_threshold,
                 )
         else:
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -149,6 +164,7 @@ def generate_dandiset_summaries(
                         summary_directory=summary_directory,
                         ip_to_region=ip_to_region,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
+                        region_disclosure_threshold=region_disclosure_threshold,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
                 ]
@@ -305,6 +321,27 @@ def _get_undetermined_dandi_asset_info(
     return dandiset_id_to_local_content_directories, content_id_to_dandiset_path
 
 
+def _collect_views_by_blob_directory(
+    blob_directories: list[pathlib.Path], /
+) -> dict[pathlib.Path, list[tuple[str, str]]]:
+    """
+    Sessionize every blob of a Dandiset once, so that all summaries of it can share the result.
+
+    Delegates to the upstream sessionization so that a view means exactly the same thing in the DANDI
+    summaries as it does in the generic ones they are aggregated with. Each view is returned as the
+    `(date, ip)` pair of the request that began it.
+
+    Blob directories that do not exist were never accessed and so have no views.
+    """
+    return {
+        blob_directory: s3_log_extraction.summarize._generate_summaries._collect_asset_views(
+            asset_directory=blob_directory, use_encryption=False
+        )
+        for blob_directory in blob_directories
+        if blob_directory.exists()
+    }
+
+
 def _summarize_dandiset(
     *,
     dandiset_id: str,
@@ -312,14 +349,20 @@ def _summarize_dandiset(
     summary_directory: pathlib.Path,
     ip_to_region: dict[str, str],
     blob_id_to_asset_path: dict[str, str],
+    region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
+    views_by_blob_directory = _collect_views_by_blob_directory(blob_directories)
+
     _summarize_dandiset_by_day(
-        blob_directories=blob_directories, summary_file_path=summary_directory / dandiset_id / "by_day.tsv"
+        blob_directories=blob_directories,
+        summary_file_path=summary_directory / dandiset_id / "by_day.tsv",
+        views_by_blob_directory=views_by_blob_directory,
     )
     _summarize_dandiset_by_asset(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
+        views_by_blob_directory=views_by_blob_directory,
     )
     _summarize_dandiset_by_asset_per_week(
         blob_directories=blob_directories,
@@ -335,6 +378,8 @@ def _summarize_dandiset(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
         ip_to_region=ip_to_region,
+        views_by_blob_directory=views_by_blob_directory,
+        region_disclosure_threshold=region_disclosure_threshold,
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
@@ -344,17 +389,25 @@ def _summarize_dandiset(
 
 
 def _summarize_dandiset_by_day(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, request_count_minimum: int = 50
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
 ) -> None:
     all_dates = []
     all_bytes_sent = []
     all_downloads = []
+    number_of_views_by_day = collections.defaultdict(int)
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
 
         if not blob_directory.exists():
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
+
+        # A session can straddle midnight, so it is counted on the day of its first request
+        for view_date, _ in views_by_blob_directory.get(blob_directory, []):
+            number_of_views_by_day[view_date] += 1
 
         timestamps_file_path = blob_directory / "timestamps.txt"
         dates = [
@@ -368,11 +421,7 @@ def _summarize_dandiset_by_day(
         all_bytes_sent.extend(bytes_sent)
 
         download_file_path = blob_directory / "download.txt"
-        downloads = (
-            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
-            if download_file_path.exists()
-            else [0] * len(dates)
-        )
+        downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
         all_downloads.extend(downloads)
 
     summarized_activity_by_day = collections.defaultdict(int)
@@ -392,14 +441,9 @@ def _summarize_dandiset_by_day(
         data={
             "date": all_dates_ordered,
             "bytes_sent": list(summarized_activity_by_day.values()),
-            "number_of_requests": [
-                _round_requester_count(count=number_of_requests_by_day[date], modulo=20, minimum=request_count_minimum)
-                for date in all_dates_ordered
-            ],
-            "number_of_downloads": [
-                _round_requester_count(count=number_of_downloads_by_day[date], modulo=20, minimum=request_count_minimum)
-                for date in all_dates_ordered
-            ],
+            "number_of_requests": [number_of_requests_by_day[date] for date in all_dates_ordered],
+            "number_of_downloads": [number_of_downloads_by_day[date] for date in all_dates_ordered],
+            "number_of_views": [number_of_views_by_day[date] for date in all_dates_ordered],
         }
     )
     summary_table.sort_values(by="date", inplace=True)
@@ -574,11 +618,12 @@ def _summarize_dandiset_by_asset(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     blob_id_to_asset_path: dict[str, str],
-    request_count_minimum: int = 50,
+    views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
     number_of_downloads_by_asset = collections.defaultdict(int)
+    number_of_views_by_asset = collections.defaultdict(int)
     for blob_directory in blob_directories:
         blob_id = blob_directory.name
 
@@ -593,15 +638,12 @@ def _summarize_dandiset_by_asset(
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
         download_file_path = blob_directory / "download.txt"
-        downloads = (
-            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
-            if download_file_path.exists()
-            else [0] * len(bytes_sent)
-        )
+        downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
 
         summarized_activity_by_asset[asset_path] += sum(bytes_sent)
         number_of_requests_by_asset[asset_path] += len(bytes_sent)
         number_of_downloads_by_asset[asset_path] += sum(downloads)
+        number_of_views_by_asset[asset_path] += len(views_by_blob_directory.get(blob_directory, []))
 
     if len(summarized_activity_by_asset) == 0:
         return
@@ -612,18 +654,9 @@ def _summarize_dandiset_by_asset(
         data={
             "asset_path": all_asset_paths,
             "bytes_sent": list(summarized_activity_by_asset.values()),
-            "number_of_requests": [
-                _round_requester_count(
-                    count=number_of_requests_by_asset[path], modulo=20, minimum=request_count_minimum
-                )
-                for path in all_asset_paths
-            ],
-            "number_of_downloads": [
-                _round_requester_count(
-                    count=number_of_downloads_by_asset[path], modulo=20, minimum=request_count_minimum
-                )
-                for path in all_asset_paths
-            ],
+            "number_of_requests": [number_of_requests_by_asset[path] for path in all_asset_paths],
+            "number_of_downloads": [number_of_downloads_by_asset[path] for path in all_asset_paths],
+            "number_of_views": [number_of_views_by_asset[path] for path in all_asset_paths],
         }
     )
     summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
@@ -634,17 +667,23 @@ def _summarize_dandiset_by_region(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     ip_to_region: dict[str, str],
-    request_count_minimum: int = 50,
+    views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
+    region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
     all_regions = []
     all_bytes_sent = []
     all_downloads = []
+    number_of_views_by_region = collections.defaultdict(int)
     for blob_directory in blob_directories:
         # TODO: Could add a step here to track which object IDs have been processed, and if encountered again
         # Just copy the file over instead of reprocessing
 
         if not blob_directory.exists():
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
+
+        # A view is made by a single requester, so it belongs to the region of that one IP
+        for _, view_ip in views_by_blob_directory.get(blob_directory, []):
+            number_of_views_by_region[ip_to_region.get(view_ip, "missing")] += 1
 
         ips_file_path = blob_directory / "ips.txt"
         ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
@@ -656,11 +695,7 @@ def _summarize_dandiset_by_region(
         all_bytes_sent.extend(bytes_sent)
 
         download_file_path = blob_directory / "download.txt"
-        downloads = (
-            [int(value.strip()) for value in download_file_path.read_text().splitlines()]
-            if download_file_path.exists()
-            else [0] * len(regions)
-        )
+        downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
         all_downloads.extend(downloads)
 
     summarized_activity_by_region = collections.defaultdict(int)
@@ -674,56 +709,24 @@ def _summarize_dandiset_by_region(
     if len(summarized_activity_by_region) == 0:
         return
 
-    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
     all_regions_ordered = list(summarized_activity_by_region.keys())
     summary_table = pandas.DataFrame(
         data={
             "region": all_regions_ordered,
             "bytes_sent": list(summarized_activity_by_region.values()),
-            "number_of_requests": [
-                _round_requester_count(
-                    count=number_of_requests_by_region[region], modulo=20, minimum=request_count_minimum
-                )
-                for region in all_regions_ordered
-            ],
-            "number_of_downloads": [
-                _round_requester_count(
-                    count=number_of_downloads_by_region[region], modulo=20, minimum=request_count_minimum
-                )
-                for region in all_regions_ordered
-            ],
+            "number_of_requests": [number_of_requests_by_region[region] for region in all_regions_ordered],
+            "number_of_downloads": [number_of_downloads_by_region[region] for region in all_regions_ordered],
+            "number_of_views": [number_of_views_by_region[region] for region in all_regions_ordered],
         }
     )
-    summary_table.to_csv(path_or_buf=summary_file_path, mode="w", sep="\t", header=True, index=False)
 
-
-def _round_requester_count(count: int, modulo: int, minimum: int) -> str | int:
-    """
-    Round a unique requester count for privacy protection.
-
-    If the count is less than ``minimum``, returns a sentinel string indicating
-    the count is below the threshold (e.g., ``"<50"``). Otherwise, rounds to the
-    nearest multiple of ``modulo``.
-
-    Parameters
-    ----------
-    count : int
-        The exact number of unique requesters to round.
-    modulo : int
-        The granularity used for rounding (e.g., ``20`` rounds to the nearest 20).
-    minimum : int
-        The minimum disclosure threshold. Counts below this value are reported
-        as ``"<{minimum}"`` to protect privacy.
-
-    Returns
-    -------
-    str or int
-        A string of the form ``"<{minimum}"`` if ``count < minimum``, otherwise
-        an integer rounded to the nearest multiple of ``modulo``.
-    """
-    if count < minimum:
-        return f"<{minimum}"
-    return round(count / modulo) * modulo
+    # The by-region summary is the only one that pairs activity with requester location, so it is published
+    # only when the update it carries moves more than the threshold of resolved regions at once
+    s3_log_extraction.summarize._generate_summaries._write_summary_by_region(
+        summary_table=summary_table,
+        summary_file_path=summary_file_path,
+        region_disclosure_threshold=region_disclosure_threshold,
+    )
 
 
 def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
@@ -758,42 +761,40 @@ def _summarize_dandiset_unique_requester_count(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     ip_to_region: dict[str, str] | None = None,
-    modulo: int = 20,
-    minimum: int = 50,
 ) -> None:
     """
-    Compute and save the privacy-rounded unique requester count for a Dandiset.
+    Compute and save the unique requester count for a Dandiset.
 
     Reads all ``ips.txt`` files from the given blob directories, counts the
     number of unique IPs across the entire Dandiset (excluding IPs attributed to
-    known cloud/hosting/VPN services), rounds the result via
-    :func:`_round_requester_count`, and writes the value to ``summary_file_path``.
+    known cloud/hosting/VPN services), and writes the value to ``summary_file_path``.
+
+    The count is not paired with any location, so it cannot single out a requester and is written with
+    its true value on every update.
 
     Parameters
     ----------
     blob_directories : list of pathlib.Path
         Paths to the per-blob extraction directories containing ``ips.txt`` files.
     summary_file_path : pathlib.Path
-        Destination file where the rounded count (as a string) will be written.
+        Destination file where the count (as a string) will be written.
     ip_to_region : dict of str to str, optional
         Mapping of IP addresses to their region (or cloud service) labels, used to
         exclude cloud/hosting/VPN service IPs from the requester count.
-    modulo : int, optional
-        Granularity for rounding. Default is ``20``.
-    minimum : int, optional
-        Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
-        Default is ``50``.
     """
     ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
+    unique_ips = {
+        ip
+        for ip in unique_ips
+        if not s3_log_extraction.ip_utils._globals._is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+    }
 
     if not unique_ips:
         return
 
-    rounded_count = _round_requester_count(count=len(unique_ips), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_file_path.write_text(str(rounded_count))
+    summary_file_path.write_text(str(len(unique_ips)))
 
 
 def _summarize_archive_unique_requester_count(
@@ -801,38 +802,37 @@ def _summarize_archive_unique_requester_count(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     ip_to_region: dict[str, str] | None = None,
-    modulo: int = 20,
-    minimum: int = 50,
 ) -> None:
     """
-    Compute and save the privacy-rounded unique requester count for the archive.
+    Compute and save the unique requester count for the archive.
 
     Collects unique IPs across all provided blob directories (a true union
     across all Dandisets), excludes IPs attributed to known cloud/hosting/VPN
-    services, rounds the result, and writes the value to ``summary_file_path``.
+    services, and writes the value to ``summary_file_path``.
+
+    The count is not paired with any location, so it cannot single out a requester and is written with
+    its true value on every update.
 
     Parameters
     ----------
     blob_directories : list of pathlib.Path
         All per-blob extraction directories from all Dandisets.
     summary_file_path : pathlib.Path
-        Destination file where the rounded count will be written.
+        Destination file where the count will be written.
     ip_to_region : dict of str to str, optional
         Mapping of IP addresses to their region (or cloud service) labels, used to
         exclude cloud/hosting/VPN service IPs from the requester count.
-    modulo : int, optional
-        Granularity for rounding. Default is ``20``.
-    minimum : int, optional
-        Minimum disclosure threshold. Counts below this are reported as ``"<{minimum}"``.
-        Default is ``50``.
     """
     ip_to_region = ip_to_region or {}
     unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {ip for ip in unique_ips if not is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))}
+    unique_ips = {
+        ip
+        for ip in unique_ips
+        if not s3_log_extraction.ip_utils._globals._is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+    }
 
     if not unique_ips:
         return
 
-    rounded_count = _round_requester_count(count=len(unique_ips), modulo=modulo, minimum=minimum)
     summary_file_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_file_path.write_text(str(rounded_count))
+    summary_file_path.write_text(str(len(unique_ips)))

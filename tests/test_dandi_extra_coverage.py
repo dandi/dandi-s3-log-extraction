@@ -14,7 +14,7 @@ import dandi_s3_log_extraction.summarize
 from dandi_s3_log_extraction._parallel._utils import _handle_max_workers
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _collect_unique_ips,
-    _round_requester_count,
+    _collect_views_by_blob_directory,
     _summarize_archive_by_asset_type_per_week,
     _summarize_archive_unique_requester_count,
     _summarize_dandiset_by_asset,
@@ -238,43 +238,63 @@ def test_summarize_archive_only_week_start_column(tmp_path: pathlib.Path) -> Non
     assert not (summary_dir / "archive" / "by_asset_type_per_week.tsv").exists()
 
 
-# ─── number_of_requests column ───────────────────────────────────────────────
+# ─── activity columns ────────────────────────────────────────────────────────
+
+
+def _write_blob_directory(
+    *, blob_directory: pathlib.Path, timestamps: list[str], ips: list[str], bytes_sent: list[int], downloads: list[int]
+) -> None:
+    """Write the line-aligned per-request files of a single blob."""
+    blob_directory.mkdir(parents=True, exist_ok=True)
+    (blob_directory / "timestamps.txt").write_text("\n".join(timestamps) + "\n")
+    (blob_directory / "ips.txt").write_text("\n".join(ips) + "\n")
+    (blob_directory / "bytes_sent.txt").write_text("\n".join(str(value) for value in bytes_sent) + "\n")
+    (blob_directory / "download.txt").write_text("\n".join(str(value) for value in downloads) + "\n")
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_by_day_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_day thresholds request/download counts below override minimum."""
+def test_summarize_dandiset_by_day_true_counts(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_day reports true request, download, and view counts."""
     blob_dir = tmp_path / "blob1"
-    blob_dir.mkdir()
-    (blob_dir / "timestamps.txt").write_text("200101050635\n200101224258\n200109050635\n")
-    (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
-    (blob_dir / "download.txt").write_text("1\n0\n1\n")
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101224258", "200109050635"],
+        ips=["192.0.2.1", "192.0.2.1", "192.0.2.1"],
+        bytes_sent=[100, 200, 300],
+        downloads=[1, 0, 1],
+    )
 
     summary_file_path = tmp_path / "by_day.tsv"
     _summarize_dandiset_by_day(
-        blob_directories=[blob_dir], summary_file_path=summary_file_path, request_count_minimum=5
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
-    assert "number_of_requests" in result.columns
-    assert "number_of_downloads" in result.columns
     row_2020_01_01 = result[result["date"] == "2020-01-01"].iloc[0]
     assert row_2020_01_01["bytes_sent"] == 300
-    assert row_2020_01_01["number_of_requests"] == "<5"
-    assert row_2020_01_01["number_of_downloads"] == "<5"
+    assert row_2020_01_01["number_of_requests"] == 2
+    assert row_2020_01_01["number_of_downloads"] == 1
+    assert row_2020_01_01["number_of_views"] == 1
     row_2020_01_09 = result[result["date"] == "2020-01-09"].iloc[0]
     assert row_2020_01_09["bytes_sent"] == 300
-    assert row_2020_01_09["number_of_requests"] == "<5"
-    assert row_2020_01_09["number_of_downloads"] == "<5"
+    assert row_2020_01_09["number_of_requests"] == 1
+    assert row_2020_01_09["number_of_downloads"] == 1
+    assert row_2020_01_09["number_of_views"] == 0
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_asset thresholds request/download counts below override minimum."""
+def test_summarize_dandiset_by_asset_true_counts(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_asset reports true request, download, and view counts."""
     blob_dir = tmp_path / "blobid1"
-    blob_dir.mkdir()
-    (blob_dir / "bytes_sent.txt").write_text("512\n1024\n256\n")
-    (blob_dir / "download.txt").write_text("1\n0\n1\n")
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101224258", "200109050635"],
+        ips=["192.0.2.1", "192.0.2.1", "192.0.2.1"],
+        bytes_sent=[512, 1024, 256],
+        downloads=[1, 0, 1],
+    )
 
     blob_id_to_asset_path = {"blobid1": "path/to/asset.nwb"}
     summary_file_path = tmp_path / "by_asset.tsv"
@@ -282,25 +302,27 @@ def test_summarize_dandiset_by_asset_number_of_requests(tmp_path: pathlib.Path) 
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
         blob_id_to_asset_path=blob_id_to_asset_path,
-        request_count_minimum=5,
+        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
-    assert "number_of_requests" in result.columns
-    assert "number_of_downloads" in result.columns
     assert result.iloc[0]["bytes_sent"] == 1792
-    assert result.iloc[0]["number_of_requests"] == "<5"
-    assert result.iloc[0]["number_of_downloads"] == "<5"
+    assert result.iloc[0]["number_of_requests"] == 3
+    assert result.iloc[0]["number_of_downloads"] == 2
+    assert result.iloc[0]["number_of_views"] == 1
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_region thresholds request/download counts below override minimum."""
+def test_summarize_dandiset_by_region_true_counts(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_region reports true counts and attributes each view to its requester region."""
     blob_dir = tmp_path / "blob1"
-    blob_dir.mkdir()
-    (blob_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.1\n")
-    (blob_dir / "bytes_sent.txt").write_text("100\n200\n300\n")
-    (blob_dir / "download.txt").write_text("1\n0\n1\n")
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101224258", "200109050635"],
+        ips=["192.0.2.1", "192.0.2.2", "192.0.2.1"],
+        bytes_sent=[100, 200, 300],
+        downloads=[1, 0, 1],
+    )
 
     ip_to_region = {"192.0.2.1": "US/California", "192.0.2.2": "US/New York"}
     summary_file_path = tmp_path / "by_region.tsv"
@@ -308,72 +330,82 @@ def test_summarize_dandiset_by_region_number_of_requests(tmp_path: pathlib.Path)
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
         ip_to_region=ip_to_region,
-        request_count_minimum=5,
+        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        region_disclosure_threshold=0,
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
-    assert "number_of_requests" in result.columns
-    assert "number_of_downloads" in result.columns
-    ca_row = result[result["region"] == "US/California"].iloc[0]
-    assert ca_row["bytes_sent"] == 400
-    assert ca_row["number_of_requests"] == "<5"
-    assert ca_row["number_of_downloads"] == "<5"
-    ny_row = result[result["region"] == "US/New York"].iloc[0]
-    assert ny_row["bytes_sent"] == 200
-    assert ny_row["number_of_requests"] == "<5"
-    assert ny_row["number_of_downloads"] == "<5"
+    california_row = result[result["region"] == "US/California"].iloc[0]
+    assert california_row["bytes_sent"] == 400
+    assert california_row["number_of_requests"] == 2
+    assert california_row["number_of_downloads"] == 2
+    assert california_row["number_of_views"] == 0
+    new_york_row = result[result["region"] == "US/New York"].iloc[0]
+    assert new_york_row["bytes_sent"] == 200
+    assert new_york_row["number_of_requests"] == 1
+    assert new_york_row["number_of_downloads"] == 0
+    assert new_york_row["number_of_views"] == 1
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_by_day_rounds_request_and_download_counts(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_by_day rounds request/download counts when above override minimum."""
+def test_summarize_dandiset_by_region_withheld_below_threshold(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_by_region does not publish when too few resolved regions are updated."""
+    blob_dir = tmp_path / "blob1"
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101224258"],
+        ips=["192.0.2.1", "192.0.2.2"],
+        bytes_sent=[100, 200],
+        downloads=[1, 0],
+    )
+
+    ip_to_region = {"192.0.2.1": "US/California", "192.0.2.2": "US/New York"}
+    summary_file_path = tmp_path / "by_region.tsv"
+    _summarize_dandiset_by_region(
+        blob_directories=[blob_dir],
+        summary_file_path=summary_file_path,
+        ip_to_region=ip_to_region,
+        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+    )
+
+    assert not summary_file_path.exists()
+
+
+@pytest.mark.ai_generated
+def test_collect_views_by_blob_directory_sessionizes_streaming_requests(tmp_path: pathlib.Path) -> None:
+    """A view is a run of streaming requests from one IP no more than eight hours apart."""
+    blob_dir = tmp_path / "blob1"
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        # Two streaming requests an hour apart, then a third a full day later, then a download
+        timestamps=["200101050635", "200101060635", "200102060635", "200102070000"],
+        ips=["192.0.2.1", "192.0.2.1", "192.0.2.1", "192.0.2.1"],
+        bytes_sent=[100, 200, 300, 400],
+        downloads=[0, 0, 0, 1],
+    )
+
+    views_by_blob_directory = _collect_views_by_blob_directory([blob_dir])
+
+    assert views_by_blob_directory[blob_dir] == [("2020-01-01", "192.0.2.1"), ("2020-01-02", "192.0.2.1")]
+
+
+@pytest.mark.ai_generated
+def test_collect_views_by_blob_directory_skips_missing_blob_dir(tmp_path: pathlib.Path) -> None:
+    """Blob directories that were never accessed have no extracted files and so no views."""
+    assert _collect_views_by_blob_directory([tmp_path / "nonexistent"]) == {}
+
+
+@pytest.mark.ai_generated
+def test_collect_views_by_blob_directory_raises_on_incomplete_extraction(tmp_path: pathlib.Path) -> None:
+    """An extraction cache written before 'download.txt' existed is reported rather than counted as zero."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "timestamps.txt").write_text("\n".join(["200101010000"] * 35))
-    (blob_dir / "bytes_sent.txt").write_text("\n".join(["1"] * 35))
-    (blob_dir / "download.txt").write_text("\n".join(["1"] * 35))
+    (blob_dir / "timestamps.txt").write_text("200101050635\n")
+    (blob_dir / "ips.txt").write_text("192.0.2.1\n")
+    (blob_dir / "bytes_sent.txt").write_text("100\n")
 
-    summary_file_path = tmp_path / "by_day.tsv"
-    _summarize_dandiset_by_day(
-        blob_directories=[blob_dir], summary_file_path=summary_file_path, request_count_minimum=30
-    )
-
-    result = pandas.read_table(filepath_or_buffer=summary_file_path)
-    row = result[result["date"] == "2020-01-01"].iloc[0]
-    assert row["number_of_requests"] == 40
-    assert row["number_of_downloads"] == 40
-
-
-# ─── _round_requester_count ───────────────────────────────────────────────────
-
-
-@pytest.mark.ai_generated
-@pytest.mark.parametrize(
-    ("count", "modulo", "minimum", "expected"),
-    [
-        # Below minimum → sentinel string
-        (0, 20, 50, "<50"),
-        (1, 20, 50, "<50"),
-        (49, 20, 50, "<50"),
-        # At or above minimum → rounded to nearest multiple of modulo
-        (50, 20, 50, 40),  # round(2.5)=2 (banker's rounding)
-        (55, 20, 50, 60),  # round(2.75)=3
-        (60, 20, 50, 60),
-        (100, 20, 50, 100),
-        (123, 20, 50, 120),
-        # Custom modulo and minimum
-        (4, 5, 5, "<5"),
-        (5, 5, 5, 5),
-        (7, 5, 5, 5),
-        (8, 5, 5, 10),
-        # minimum can differ from modulo
-        (9, 10, 5, 10),
-        (3, 10, 5, "<5"),
-    ],
-)
-def test_round_requester_count(count: int, modulo: int, minimum: int, expected: str | int) -> None:
-    """Privacy-rounding returns the sentinel below minimum and rounds to the nearest modulo otherwise."""
-    assert _round_requester_count(count=count, modulo=modulo, minimum=minimum) == expected
+    with pytest.raises(RuntimeError, match="download.txt"):
+        _collect_views_by_blob_directory([blob_dir])
 
 
 # ─── _collect_unique_ips ─────────────────────────────────────────────────────
@@ -417,11 +449,11 @@ def test_collect_unique_ips_missing_dir(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_unique_requester_count writes the sentinel when count < minimum."""
+def test_summarize_dandiset_unique_requester_count_writes_small_count(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count writes the true count even when it is small."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    (blob_dir / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs < 50 minimum
+    (blob_dir / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n192.0.2.10\n")  # 2 unique IPs
 
     summary_file_path = tmp_path / "requester_count.tsv"
     _summarize_dandiset_unique_requester_count(
@@ -429,15 +461,14 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_sentinel(tmp_p
         summary_file_path=summary_file_path,
     )
 
-    assert summary_file_path.read_text() == "<50"
+    assert summary_file_path.read_text() == "2"
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_unique_requester_count writes a rounded count when count >= minimum."""
+def test_summarize_dandiset_unique_requester_count_writes_large_count(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count writes the true count for many requesters."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # 55 unique IPs → >= 50 minimum → rounded to nearest 20 = 60
     unique_ips = "\n".join(f"192.0.2.{i}" for i in range(55))
     (blob_dir / "ips.txt").write_text(unique_ips)
 
@@ -447,7 +478,7 @@ def test_summarize_dandiset_unique_requester_count_writes_rounded_count(tmp_path
         summary_file_path=summary_file_path,
     )
 
-    assert summary_file_path.read_text() == "60"
+    assert summary_file_path.read_text() == "55"
 
 
 @pytest.mark.ai_generated
@@ -504,8 +535,8 @@ def test_summarize_dandiset_unique_requester_count_excludes_cloud_service_ips(tm
         ip_to_region=ip_to_region,
     )
 
-    # 55 real unique IPs, rounded to nearest 20 = 60 (cloud service IPs excluded from the count)
-    assert summary_file_path.read_text() == "60"
+    # 55 real unique IPs (cloud service IPs excluded from the count)
+    assert summary_file_path.read_text() == "55"
 
 
 # ─── _summarize_archive_unique_requester_count ────────────────────────────────
@@ -528,8 +559,8 @@ def test_summarize_archive_unique_requester_count_true_union(tmp_path: pathlib.P
         summary_file_path=archive_file,
     )
 
-    # 3 unique IPs (192.0.2.10, 192.0.2.20, 192.0.2.30) → all < 50 → sentinel
-    assert archive_file.read_text() == "<50"
+    # 3 unique IPs (192.0.2.10, 192.0.2.20, 192.0.2.30)
+    assert archive_file.read_text() == "3"
 
 
 @pytest.mark.ai_generated
@@ -564,5 +595,5 @@ def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp
         ip_to_region=ip_to_region,
     )
 
-    # 55 real unique IPs, rounded to nearest 20 = 60 (cloud service IPs excluded from the count)
-    assert archive_file.read_text() == "60"
+    # 55 real unique IPs (cloud service IPs excluded from the count)
+    assert archive_file.read_text() == "55"
