@@ -31,6 +31,7 @@
 
 ### 🏠 Internal
 
+- Installed `s3_log_extraction` from the `refs/pull/294/head` reference of the upstream repository in the testing workflows, so that the suites can run before the pinned `1.10.11` lower bound is released to PyPI. This step is temporary and should be removed once that release is published. ([#94](https://github.com/dandi/dandi-s3-log-extraction/pull/94))
 - Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Removed the database bundling tools. That includes `bundle_database`, `dandis3logextraction update database`, and the `database` submodule. The `sharing` optional dependency group was also removed. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Removed the `--manifest` CLI option and `manifest_file_path` from `dandis3logextraction extract`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
