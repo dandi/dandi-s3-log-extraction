@@ -25,7 +25,7 @@ VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 # Taken from the upstream package so that the DANDI summaries are published under the same privacy policy
 # as the generic ones they are aggregated with
-REGION_DISCLOSURE_THRESHOLD = s3_log_extraction.summarize.REGION_DISCLOSURE_THRESHOLD
+REGION_DISCLOSURE_THRESHOLD = s3_log_extraction.summarize.globals.REGION_DISCLOSURE_THRESHOLD
 
 
 @beartype
