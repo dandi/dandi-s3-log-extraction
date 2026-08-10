@@ -32,6 +32,11 @@ jobs:
       - name: Global Setup
         run: python -m pip install -U pip
 
+      # TODO: remove this step once s3-log-extraction 1.10.11 is released to PyPI
+      # The pinned lower bound is only available on https://github.com/dandi/s3-log-extraction/pull/294 for now
+      - name: Temporary installation of the upstream development branch
+        run: pip install --no-cache-dir "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@refs/pull/294/head"
+
       - name: Minimal local installation
         run: pip install --no-cache-dir .
 

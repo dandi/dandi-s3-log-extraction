@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from dandi_s3_log_extraction._command_line_interface._cli import _dandis3logextraction_cli
+from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import REGION_DISCLOSURE_THRESHOLD
 
 
 @pytest.mark.ai_generated
@@ -163,6 +164,7 @@ def test_update_summaries_default_mode() -> None:
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
+            region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
         )
 
@@ -175,7 +177,9 @@ def test_update_summaries_archive_mode() -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["update", "summaries", "--mode", "archive"])
 
         assert result.exit_code == 0, result.output
-        mock_s3.summarize.generate_archive_summaries.assert_called_once_with(cache_directory=None)
+        mock_s3.summarize.generate_archive_summaries.assert_called_once_with(
+            cache_directory=None, region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD
+        )
 
 
 @pytest.mark.ai_generated
@@ -193,6 +197,7 @@ def test_update_summaries_with_pick_and_skip() -> None:
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
+            region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
         )
 
@@ -225,6 +230,7 @@ def test_update_summaries_with_all_options() -> None:
             content_id_to_usage_dandiset_path_url="https://example.com",
             api_url="https://api.example.com",
             unassociated=True,
+            region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
         )
 
@@ -247,5 +253,41 @@ def test_update_summaries_with_cache(tmp_path: pathlib.Path) -> None:
             content_id_to_usage_dandiset_path_url=None,
             api_url=None,
             unassociated=False,
+            region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=str(tmp_path),
+        )
+
+
+@pytest.mark.ai_generated
+def test_update_summaries_with_threshold() -> None:
+    """Test update summaries maps --threshold onto region_disclosure_threshold."""
+    runner = CliRunner()
+    with patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_summaries") as mock_gen:
+        result = runner.invoke(_dandis3logextraction_cli, ["update", "summaries", "--threshold", "0"])
+
+        assert result.exit_code == 0, result.output
+        mock_gen.assert_called_once_with(
+            pick=None,
+            skip=None,
+            workers=-2,
+            content_id_to_usage_dandiset_path_url=None,
+            api_url=None,
+            unassociated=False,
+            region_disclosure_threshold=0,
+            cache_directory=None,
+        )
+
+
+@pytest.mark.ai_generated
+def test_update_summaries_archive_mode_with_threshold() -> None:
+    """Test update summaries --mode archive passes --threshold to the upstream archive summaries."""
+    runner = CliRunner()
+    with patch("dandi_s3_log_extraction._command_line_interface._cli.s3_log_extraction") as mock_s3:
+        result = runner.invoke(
+            _dandis3logextraction_cli, ["update", "summaries", "--mode", "archive", "--threshold", "3"]
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_s3.summarize.generate_archive_summaries.assert_called_once_with(
+            cache_directory=None, region_disclosure_threshold=3
         )

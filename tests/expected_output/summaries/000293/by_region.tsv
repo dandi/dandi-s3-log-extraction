@@ -1,2 +1,2 @@
-region	bytes_sent	number_of_requests	number_of_downloads
-unknown	0	1	0
+region	bytes_sent	number_of_requests	number_of_downloads	number_of_views
+US/California	0	1	0	1

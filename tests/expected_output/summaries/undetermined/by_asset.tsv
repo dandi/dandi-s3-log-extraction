@@ -1,2 +1,2 @@
-asset_path	bytes_sent	number_of_requests	number_of_downloads
-undetermined	0	1	1
+asset_path	bytes_sent	number_of_requests	number_of_downloads	number_of_views
+undetermined	0	1	1	0

@@ -9,6 +9,7 @@ import s3_log_extraction
 
 from ..extractors import DandiRemoteS3LogAccessExtractor
 from ..summarize import generate_dandiset_summaries
+from ..summarize._generate_dandiset_summaries import REGION_DISCLOSURE_THRESHOLD
 
 
 # dandis3logextraction
@@ -209,6 +210,19 @@ def _update_cli() -> None:
     default=False,
 )
 @rich_click.option(
+    "--threshold",
+    "region_disclosure_threshold",
+    help=(
+        "The number of resolved regions an update to a 'by_region.tsv' must move at once for it to be published. "
+        "Below this, the summary is left as it was, so that no single requester's activity can be read off "
+        "the change. A resolved region is any label naming a physical place, such as 'US/California'."
+    ),
+    required=False,
+    type=rich_click.IntRange(min=0),
+    default=REGION_DISCLOSURE_THRESHOLD,
+    show_default=True,
+)
+@rich_click.option(
     "--cache",
     "cache_directory",
     help=(
@@ -227,13 +241,17 @@ def _update_summaries_cli(
     content_id_to_usage_dandiset_path_url: str | None = None,
     api_url: str | None = None,
     unassociated: bool = False,
+    region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
     cache_directory: str | None = None,
 ) -> None:
     """Generate condensed summaries of activity."""
     match mode:
         case "archive":
             # TODO: replace with error message instructing user to use s3logextraction directly
-            s3_log_extraction.summarize.generate_archive_summaries(cache_directory=cache_directory)
+            s3_log_extraction.summarize.generate_archive_summaries(
+                cache_directory=cache_directory,
+                region_disclosure_threshold=region_disclosure_threshold,
+            )
         case _:
             pick_as_list = pick.split(",") if pick is not None else None
             skip_as_list = skip.split(",") if skip is not None else None
@@ -244,5 +262,6 @@ def _update_summaries_cli(
                 content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
                 api_url=api_url,
                 unassociated=unassociated,
+                region_disclosure_threshold=region_disclosure_threshold,
                 cache_directory=cache_directory,
             )
