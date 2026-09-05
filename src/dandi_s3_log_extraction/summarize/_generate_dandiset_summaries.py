@@ -48,6 +48,10 @@ def generate_dandiset_summaries(
     `region_disclosure_threshold` resolved regions at once. Its totals therefore drift out of step with the
     other summaries between publications.
 
+    The archive `requester_count.tsv` is also written here, as the number of unique requesters across the
+    whole extraction cache. It cannot be aggregated from the per-Dandiset summaries afterwards, since a
+    requester who accessed several Dandisets would be counted once per Dandiset.
+
     Parameters
     ----------
     cache_directory : pathlib.Path
@@ -184,6 +188,19 @@ def generate_dandiset_summaries(
                     ),
                     maxlen=0,
                 )
+
+    # A requester is a unique IP address, and one requester commonly accesses several Dandisets, so the
+    # archive count is a union over every extracted blob rather than a sum of the per-Dandiset counts.
+    # The union is taken over the whole extraction cache so that the associated and the unassociated pass
+    # write the same value, whichever of them runs last.
+    all_blob_directories = [
+        ips_file_path.parent for ips_file_path in (cache_directory / "extraction").rglob(pattern="ips.txt")
+    ]
+    _summarize_archive_unique_requester_count(
+        blob_directories=all_blob_directories,
+        summary_file_path=summary_directory / "archive" / "requester_count.tsv",
+        ip_to_region=ip_to_region,
+    )
 
 
 def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[str, str]]:

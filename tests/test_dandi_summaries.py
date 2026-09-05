@@ -9,7 +9,6 @@ import s3_log_extraction.summarize
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _summarize_archive_by_asset_type_per_week,
-    _summarize_archive_unique_requester_count,
 )
 
 # A stand-in geolocation of the single requester of the example logs, copied into the `ips` cache subdirectory
@@ -49,14 +48,18 @@ def test_dandiset_summaries(tmpdir: py.path.local):
         cache_directory=test_dir, workers=1, unassociated=True, region_disclosure_threshold=0
     )
 
+    # The archive requester count is written by the Dandiset summaries above, since it is a union over the
+    # extraction cache rather than something the archive summaries can aggregate from the per-Dandiset counts
+    archive_requester_count_file_path = test_summary_dir / "archive" / "requester_count.tsv"
+    assert archive_requester_count_file_path.exists()
+    count_before_archive_summaries = archive_requester_count_file_path.read_text().strip()
+
     # Generate archive-level summaries with upstream + plugin-specific functions
     s3_log_extraction.summarize.generate_archive_summaries(cache_directory=test_dir, region_disclosure_threshold=0)
     _summarize_archive_by_asset_type_per_week(summary_directory=test_summary_dir)
-    all_blob_dirs = [path.parent for path in test_extraction_dir.rglob("bytes_sent.txt")]
-    _summarize_archive_unique_requester_count(
-        blob_directories=all_blob_dirs,
-        summary_file_path=test_summary_dir / "archive" / "requester_count.tsv",
-    )
+
+    # The archive summaries aggregate the per-Dandiset summaries, so they must leave that union alone
+    assert archive_requester_count_file_path.read_text().strip() == count_before_archive_summaries
 
     test_file_paths = {
         path.relative_to(test_summary_dir): path
