@@ -24,13 +24,19 @@
 - Refactored `generate_dandiset_totals` to derive the summary directory from `cache_directory`. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Renamed the `--directory` CLI flag to `--cache` in the update commands. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
+### 🐛 Bug Fix
+
+- Fixed the archive requester count, which double-counted requesters. `generate_dandiset_summaries` writes each Dandiset's `requester_count.tsv`, but nothing wrote the archive-level one, so it was left to the upstream `generate_archive_summaries`, which summed the per-Dandiset counts and so counted a requester once per Dandiset it accessed. `generate_dandiset_summaries` now writes `archive/requester_count.tsv` itself as the union of unique requesters across the whole extraction cache, restoring the archive-level call dropped in [#73](https://github.com/dandi/dandi-s3-log-extraction/pull/73). Published `archive_totals.json` values of `number_of_requesters` were overstated by the amount of cross-Dandiset overlap and will drop when the summaries are next regenerated. ([#95](https://github.com/dandi/dandi-s3-log-extraction/pull/95))
+
 ### 🔩 Dependency Updates
 
+- Raised the `s3_log_extraction` lower bound to `>=1.10.12`, which is where the archive `requester_count.tsv` stopped being overwritten with the sum of the per-dataset counts. ([#95](https://github.com/dandi/dandi-s3-log-extraction/pull/95))
 - Raised the `s3_log_extraction` lower bound to `>=1.10.11` for the streaming session view counting and the reworked privacy protection. ([#94](https://github.com/dandi/dandi-s3-log-extraction/pull/94))
 - Updated compatibility for the latest `s3-log-extraction` release by pinning the lower bound to `>=1.9.2` and adapting extractor tests and summary columns. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 
 ### 🏠 Internal
 
+- Pointed the temporary upstream installation step of the testing workflows at the default branch of `s3-log-extraction`, so that the suites run against the `1.10.12` lower bound before it is released to PyPI. ([#95](https://github.com/dandi/dandi-s3-log-extraction/pull/95))
 - Installed `s3_log_extraction` from the `refs/pull/294/head` reference of the upstream repository in the testing workflows, so that the suites can run before the pinned `1.10.11` lower bound is released to PyPI. This step is temporary and should be removed once that release is published. ([#94](https://github.com/dandi/dandi-s3-log-extraction/pull/94))
 - Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
 - Removed the database bundling tools. That includes `bundle_database`, `dandis3logextraction update database`, and the `database` submodule. The `sharing` optional dependency group was also removed. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
