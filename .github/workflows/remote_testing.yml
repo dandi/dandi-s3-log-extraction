@@ -32,10 +32,10 @@ jobs:
       - name: Global Setup
         run: python -m pip install -U pip
 
-      # TODO: remove this step once s3-log-extraction 1.10.12 is released to PyPI
-      # The pinned lower bound is only available on the upstream default branch for now
+      # TODO: switch back to @main once dandi/s3-log-extraction#297 merges, and remove this step once
+      # s3-log-extraction 1.11.1 is released to PyPI. The pinned lower bound only exists on that upstream branch.
       - name: Temporary installation of the upstream development branch
-        run: pip install --no-cache-dir "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@main"
+        run: pip install --no-cache-dir "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@claude/ip-geolocation-services-3881nm-coordinates"
 
       - name: Install local checkout
         run: pip install --no-cache-dir .[all] --group all
