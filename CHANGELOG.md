@@ -2,6 +2,10 @@
 
 # Upcoming
 
+### 🔩 Dependency Updates
+
+- Followed the upstream `s3-log-extraction` 1.11 switch from the IPInfo and OpenCage APIs to a local GeoLite2-City database and bundled ISO 3166 coordinate tables. The `geolocation` extra now installs `geoip2` and `requests` instead of `ipinfo` and `opencage`, and the upstream pin is raised to `>=1.11.1`. Region labels written by `update ip regions` now pair the ISO 3166-1 alpha-3 country code with the ISO 3166-2 subdivision code, as in `USA/CA` rather than `US/California`. The geolocation steps need the `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` credentials of a free MaxMind account in place of `IPINFO_API_KEY` and `OPENCAGE_API_KEY`; see the upstream README. The tests that exercised upstream internals through the removed APIs are replaced by tests of the public geolocation steps the DANDI pipeline runs. ([#96](https://github.com/dandi/dandi-s3-log-extraction/pull/96))
+
 ### ⚠️ Breaking
 
 - Reworked privacy protection to follow the upstream package. Individual values are no longer censored below a disclosure threshold or rounded to a modulo, so `by_day.tsv`, `by_asset.tsv`, `by_region.tsv`, and `requester_count.tsv` now report their true values. Protection instead gates the publication of `by_region.tsv`, which is the only summary that pairs activity with requester location. That file is written only when the update it carries moves more than `region_disclosure_threshold` (default `5`) resolved regions at once. A resolved region is any label naming a physical place, such as `US/California`. The consequence is that the totals of a `by_region.tsv` drift out of step with the other summaries between publications. ([#94](https://github.com/dandi/dandi-s3-log-extraction/pull/94))
