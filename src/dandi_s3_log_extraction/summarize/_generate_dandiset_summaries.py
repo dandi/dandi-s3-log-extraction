@@ -77,7 +77,7 @@ def generate_dandiset_summaries(
         Whether to generate summaries based on current undetermined status.
     region_disclosure_threshold : int, optional
         Number of resolved regions an update to a `by_region.tsv` must move at once to be published.
-        A resolved region is any label naming a physical place, such as `US/California`.
+        A resolved region is any label naming a physical place, such as `USA/CA`.
         Defaults to the upstream `REGION_DISCLOSURE_THRESHOLD`.
     """
     import dandi.dandiapi
