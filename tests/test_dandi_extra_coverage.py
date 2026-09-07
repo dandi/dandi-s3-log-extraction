@@ -348,6 +348,40 @@ def test_summarize_dandiset_by_region_true_counts(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.ai_generated
+def test_summaries_tolerate_none_region_entries(tmp_path: pathlib.Path) -> None:
+    """A ``None`` entry in the ``ip_to_region`` cache is summarized as ``missing`` instead of crashing the run."""
+    blob_dir = tmp_path / "blob1"
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101224258", "200109050635"],
+        ips=["192.0.2.1", "192.0.2.2", "192.0.2.3"],
+        bytes_sent=[100, 200, 300],
+        downloads=[1, 0, 0],
+    )
+    # Earlier upstream versions wrote ``None`` for an address that could not be geolocated
+    ip_to_region = {"192.0.2.1": None, "192.0.2.2": "bogon", "192.0.2.3": "USA/CA"}
+
+    by_region_file_path = tmp_path / "by_region.tsv"
+    _summarize_dandiset_by_region(
+        blob_directories=[blob_dir],
+        summary_file_path=by_region_file_path,
+        ip_to_region=ip_to_region,
+        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        region_disclosure_threshold=0,
+    )
+    by_region = pandas.read_table(filepath_or_buffer=by_region_file_path)
+    assert sorted(by_region["region"]) == ["USA/CA", "bogon", "missing"]
+
+    requester_count_file_path = tmp_path / "requester_count.tsv"
+    _summarize_dandiset_unique_requester_count(
+        blob_directories=[blob_dir],
+        summary_file_path=requester_count_file_path,
+        ip_to_region=ip_to_region,
+    )
+    assert requester_count_file_path.read_text() == "3"
+
+
+@pytest.mark.ai_generated
 def test_summarize_dandiset_by_region_withheld_below_threshold(tmp_path: pathlib.Path) -> None:
     """_summarize_dandiset_by_region does not publish when too few resolved regions are updated."""
     blob_dir = tmp_path / "blob1"

@@ -698,13 +698,15 @@ def _summarize_dandiset_by_region(
         if not blob_directory.exists():
             continue  # No extracted logs found (possible asset was never accessed); skip to next asset
 
-        # A view is made by a single requester, so it belongs to the region of that one IP
+        # A view is made by a single requester, so it belongs to the region of that one IP. A ``None`` entry,
+        # as written by earlier upstream versions for an address that could not be geolocated, names no place
+        # any more than an absent one does
         for _, view_ip in views_by_blob_directory.get(blob_directory, []):
-            number_of_views_by_region[ip_to_region.get(view_ip, "missing")] += 1
+            number_of_views_by_region[ip_to_region.get(view_ip) or "missing"] += 1
 
         ips_file_path = blob_directory / "ips.txt"
         ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
-        regions = [ip_to_region.get(ip, "missing") for ip in ips]
+        regions = [ip_to_region.get(ip) or "missing" for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
@@ -804,7 +806,7 @@ def _summarize_dandiset_unique_requester_count(
     unique_ips = {
         ip
         for ip in unique_ips
-        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip) or "")
     }
 
     if not unique_ips:
@@ -845,7 +847,7 @@ def _summarize_archive_unique_requester_count(
     unique_ips = {
         ip
         for ip in unique_ips
-        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
+        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip) or "")
     }
 
     if not unique_ips:
