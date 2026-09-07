@@ -5,18 +5,17 @@ import pathlib
 
 import pandas
 import pytest
+from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction.summarize
 
 _BOGON_IP = "192.0.2.0"
+# Stands in for a live resolution of the single requester, which would otherwise fetch the service range listings
+_REGION_RESOLVER = MappingRegionResolver({_BOGON_IP: "unknown"})
 
 
 def _initialize_cache(cache_directory: pathlib.Path, /) -> pathlib.Path:
-    """Create the IP cache required by summary generation and return the extraction directory."""
-    ip_cache_directory = cache_directory / "ips"
-    ip_cache_directory.mkdir(parents=True)
-    (ip_cache_directory / "ip_to_region.yaml").write_text(f"{_BOGON_IP}: unknown\n")
-
+    """Create the extraction directory summary generation reads and return it."""
     extraction_directory = cache_directory / "extraction"
     extraction_directory.mkdir()
     return extraction_directory
@@ -62,6 +61,7 @@ def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path) -> None:
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
         workers=1,
+        region_resolver=_REGION_RESOLVER,
         pick=["000001"],
         content_id_to_usage_dandiset_path_url=str(mapping_file_path),
     )
@@ -87,6 +87,7 @@ def test_content_id_with_multiple_usage_paths(tmp_path: pathlib.Path) -> None:
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
         workers=1,
+        region_resolver=_REGION_RESOLVER,
         pick=["000001", "000002"],
         content_id_to_usage_dandiset_path_url=str(mapping_file_path),
     )
@@ -116,6 +117,7 @@ def test_malformed_line_is_skipped_with_warning(tmp_path: pathlib.Path) -> None:
         dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
             cache_directory=tmp_path,
             workers=1,
+            region_resolver=_REGION_RESOLVER,
             pick=["000001"],
             content_id_to_usage_dandiset_path_url=str(mapping_file_path),
         )
@@ -140,6 +142,7 @@ def test_unassociated_blob_summarized_as_undetermined(tmp_path: pathlib.Path) ->
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
         workers=1,
+        region_resolver=_REGION_RESOLVER,
         unassociated=True,
         content_id_to_usage_dandiset_path_url=str(mapping_file_path),
     )
@@ -158,6 +161,7 @@ def test_missing_local_mapping_file_raises(tmp_path: pathlib.Path) -> None:
         dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
             cache_directory=tmp_path,
             workers=1,
+            region_resolver=_REGION_RESOLVER,
             pick=["000001"],
             content_id_to_usage_dandiset_path_url=str(tmp_path / "missing.jsonl"),
         )

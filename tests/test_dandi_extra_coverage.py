@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas
 import pytest
+from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction
 import dandi_s3_log_extraction.summarize
@@ -329,7 +330,7 @@ def test_summarize_dandiset_by_region_true_counts(tmp_path: pathlib.Path) -> Non
     _summarize_dandiset_by_region(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
         views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
         region_disclosure_threshold=0,
     )
@@ -348,8 +349,8 @@ def test_summarize_dandiset_by_region_true_counts(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.ai_generated
-def test_summaries_tolerate_none_region_entries(tmp_path: pathlib.Path) -> None:
-    """A ``None`` entry in the ``ip_to_region`` cache is summarized as ``missing`` instead of crashing the run."""
+def test_summaries_label_unplaced_requesters_as_missing(tmp_path: pathlib.Path) -> None:
+    """A requester the resolver cannot place is summarized as ``missing``, and still counts as a requester."""
     blob_dir = tmp_path / "blob1"
     _write_blob_directory(
         blob_directory=blob_dir,
@@ -358,14 +359,13 @@ def test_summaries_tolerate_none_region_entries(tmp_path: pathlib.Path) -> None:
         bytes_sent=[100, 200, 300],
         downloads=[1, 0, 0],
     )
-    # Earlier upstream versions wrote ``None`` for an address that could not be geolocated
     ip_to_region = {"192.0.2.1": None, "192.0.2.2": "bogon", "192.0.2.3": "USA/CA"}
 
     by_region_file_path = tmp_path / "by_region.tsv"
     _summarize_dandiset_by_region(
         blob_directories=[blob_dir],
         summary_file_path=by_region_file_path,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
         views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
         region_disclosure_threshold=0,
     )
@@ -376,7 +376,7 @@ def test_summaries_tolerate_none_region_entries(tmp_path: pathlib.Path) -> None:
     _summarize_dandiset_unique_requester_count(
         blob_directories=[blob_dir],
         summary_file_path=requester_count_file_path,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
     )
     assert requester_count_file_path.read_text() == "3"
 
@@ -398,7 +398,7 @@ def test_summarize_dandiset_by_region_withheld_below_threshold(tmp_path: pathlib
     _summarize_dandiset_by_region(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
         views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
     )
 
@@ -566,7 +566,7 @@ def test_summarize_dandiset_unique_requester_count_excludes_cloud_service_ips(tm
     _summarize_dandiset_unique_requester_count(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
     )
 
     # 55 real unique IPs (cloud service IPs excluded from the count)
@@ -626,7 +626,7 @@ def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp
     _summarize_archive_unique_requester_count(
         blob_directories=[blob_dir1, blob_dir2],
         summary_file_path=archive_file,
-        ip_to_region=ip_to_region,
+        region_resolver=MappingRegionResolver(ip_to_region),
     )
 
     # 55 real unique IPs (cloud service IPs excluded from the count)

@@ -61,11 +61,11 @@ To run all the steps (such as for daily updates):
 
 ```bash
 dandis3logextraction extract /mnt/backup/dandi/dandiarchive-logs
-dandis3logextraction update ip indexes
-dandis3logextraction update ip regions
-dandis3logextraction update ip coordinates
 dandis3logextraction update summaries
+s3logextraction update ip coordinates
 dandis3logextraction update totals
 dandis3logextraction update summaries --mode archive
 dandis3logextraction update totals --mode archive
 ```
+
+Requesters are geolocated while the summaries are generated, against the published IP ranges of known cloud services and VPNs and the local GeoLite2-City database of the upstream package. The database is downloaded on first use and refreshed once it is more than a week old, which needs the `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` environment variables of a free MaxMind account; see the upstream README. The coordinates step comes from the upstream `s3logextraction` CLI and gives every region of the published summaries a coordinate for the maps.

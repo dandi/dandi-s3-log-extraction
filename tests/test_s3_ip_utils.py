@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import s3_log_extraction
 import yaml
+from s3_log_extraction.ip_utils import IpRegionResolver, MappingRegionResolver
 from s3_log_extraction.ip_utils._ip_utils import (
     _get_cidr_address_ranges_and_subregions,
     _request_cidr_range,
@@ -179,41 +180,70 @@ def test_get_cidr_address_ranges_azure_raises() -> None:
 
 # ─── Geolocation steps of the DANDI pipeline ─────────────────────────────────
 
+_NO_SERVICE_NETWORKS = {"GitHub": [], "AWS": [], "GCP": [], "VPN": []}
+
+
+def _write_by_region_summary(summary_file_path: pathlib.Path, regions: list[str]) -> None:
+    """Write a minimal published by-region summary listing the given region labels."""
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = "\n".join(f"{region}\t1\t1\t0\t1" for region in regions)
+    summary_file_path.write_text(
+        f"region\tbytes_sent\tnumber_of_requests\tnumber_of_downloads\tnumber_of_views\n{rows}\n"
+    )
+
 
 @pytest.mark.ai_generated
-def test_update_ip_to_region_codes_skips_database_when_cache_is_complete(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A daily run with no new IPs must not need MaxMind credentials or open the GeoLite2 database."""
-    extraction_dir = tmp_path / "extraction"
-    extraction_dir.mkdir(parents=True)
-    (extraction_dir / "ips.txt").write_text("192.0.2.1\n")
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: bogon\n")
-
+def test_resolver_classifies_without_database_when_no_address_needs_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Service and non-routable addresses are labeled without MaxMind credentials or the GeoLite2 database."""
     monkeypatch.delenv("MAXMIND_ACCOUNT_ID", raising=False)
     monkeypatch.delenv("MAXMIND_LICENSE_KEY", raising=False)
+    service_networks = {"GitHub": [], "AWS": [("203.0.113.0/24", "us-east-1")], "GCP": [], "VPN": []}
 
-    s3_log_extraction.ip_utils.update_ip_to_region_codes(cache_directory=tmp_path, use_encryption=False)
-
-    result = yaml.safe_load((ip_cache_dir / "ip_to_region.yaml").read_text())
-    assert result == {"192.0.2.1": "bogon"}
+    with patch("s3_log_extraction.ip_utils._resolver.open_geolite2_database") as mock_open:
+        with IpRegionResolver(service_networks=service_networks) as resolver:
+            assert resolver.resolve("192.0.2.1") == "bogon"
+            assert resolver.resolve("203.0.113.7") == "AWS/us-east-1"
+    mock_open.assert_not_called()
 
 
 @pytest.mark.ai_generated
-def test_update_region_code_coordinates_no_index_file(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates raises FileNotFoundError when ip_to_region.yaml is absent."""
-    with pytest.raises(FileNotFoundError):
-        s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
+def test_resolver_places_public_address_with_geolite2() -> None:
+    """A public address outside every service range is placed by the database, as an alpha-3 label."""
+    response = MagicMock()
+    response.country.iso_code = "US"
+    response.subdivisions = [MagicMock(iso_code="CA")]
+    reader = MagicMock()
+    reader.city.return_value = response
+
+    resolver = IpRegionResolver(service_networks=_NO_SERVICE_NETWORKS, geolite2_reader=reader)
+
+    assert resolver.resolve("8.8.8.8") == "USA/CA"
+    reader.city.assert_called_once_with("8.8.8.8")
+
+
+@pytest.mark.ai_generated
+def test_mapping_region_resolver_stands_in_for_a_live_one() -> None:
+    """A fixed mapping resolves its addresses and labels every other address ``missing``."""
+    resolver = MappingRegionResolver({"192.0.2.1": "USA/CA"})
+
+    assert resolver.resolve("192.0.2.1") == "USA/CA"
+    assert resolver.resolve("192.0.2.2") == "missing"
+
+
+@pytest.mark.ai_generated
+def test_update_region_code_coordinates_without_summaries(tmp_path: pathlib.Path) -> None:
+    """update_region_code_coordinates writes only the default entries when no summary has been published."""
+    s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
+
+    coordinates = yaml.safe_load((tmp_path / "ips" / "region_codes_to_coordinates.yaml").read_text())
+    assert coordinates["bogon"] == {"latitude": None, "longitude": None}
+    assert not any("/" in label and not label.startswith(("AWS", "GCP")) for label in coordinates)
 
 
 @pytest.mark.ai_generated
 def test_update_region_code_coordinates_runs_offline(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Geographic labels are located from the bundled ISO 3166 tables without credentials or network access."""
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: USA/CA\n192.0.2.2: DEU/BE\n192.0.2.3: bogon\n")
+    """Geographic labels of the published summaries are located from the bundled ISO 3166 tables, offline."""
+    _write_by_region_summary(tmp_path / "summaries" / "000001" / "by_region.tsv", regions=["USA/CA", "DEU/BE", "bogon"])
 
     monkeypatch.delenv("MAXMIND_ACCOUNT_ID", raising=False)
     monkeypatch.delenv("MAXMIND_LICENSE_KEY", raising=False)
@@ -222,7 +252,7 @@ def test_update_region_code_coordinates_runs_offline(tmp_path: pathlib.Path, mon
         s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
     mock_get.assert_not_called()
 
-    coordinates = yaml.safe_load((ip_cache_dir / "region_codes_to_coordinates.yaml").read_text())
+    coordinates = yaml.safe_load((tmp_path / "ips" / "region_codes_to_coordinates.yaml").read_text())
     assert coordinates["USA/CA"] == s3_log_extraction.ip_utils.get_region_coordinates("USA/CA")
     assert coordinates["DEU/BE"] == s3_log_extraction.ip_utils.get_region_coordinates("DEU/BE")
     assert coordinates["bogon"] == {"latitude": None, "longitude": None}
@@ -231,9 +261,7 @@ def test_update_region_code_coordinates_runs_offline(tmp_path: pathlib.Path, mon
 @pytest.mark.ai_generated
 def test_update_region_code_coordinates_reports_unknown_labels(tmp_path: pathlib.Path) -> None:
     """A label the ISO 3166 tables do not know is reported rather than silently dropped."""
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "ip_to_region.yaml").write_text("192.0.2.1: XX/YY\n")
+    _write_by_region_summary(tmp_path / "summaries" / "000001" / "by_region.tsv", regions=["XX/YY"])
 
     with patch("builtins.print") as mock_print:
         s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
