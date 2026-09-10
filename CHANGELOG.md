@@ -40,6 +40,7 @@
 
 ### 🏠 Internal
 
+- Removed the temporary upstream installation step from the testing workflows now that the pinned `s3_log_extraction>=1.11.2` lower bound is on PyPI; the suites install the upstream package from PyPI as a regular dependency again. ([#97](https://github.com/dandi/dandi-s3-log-extraction/pull/97))
 - Pointed the temporary upstream installation step of the testing workflows at the default branch of `s3-log-extraction`, so that the suites run against the `1.10.12` lower bound before it is released to PyPI. ([#95](https://github.com/dandi/dandi-s3-log-extraction/pull/95))
 - Installed `s3_log_extraction` from the `refs/pull/294/head` reference of the upstream repository in the testing workflows, so that the suites can run before the pinned `1.10.11` lower bound is released to PyPI. This step is temporary and should be removed once that release is published. ([#94](https://github.com/dandi/dandi-s3-log-extraction/pull/94))
 - Swapped runtime argument type checking from `pydantic.validate_call` to `beartype` for DANDI summary generation functions. ([#68](https://github.com/dandi/dandi-s3-log-extraction/pull/68))
