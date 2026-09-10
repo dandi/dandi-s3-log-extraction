@@ -39,9 +39,15 @@ def generate_dandiset_summaries(
     api_url: str | None = None,
     unassociated: bool = False,
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
+
+    Requesters are geolocated while the summaries are generated, by the upstream resolver: each IP address is
+    checked against the published ranges of known cloud services and VPNs, and otherwise looked up in the local
+    GeoLite2-City database. No requester's location is written to disk; only the aggregated by-region summaries
+    are.
 
     Every summary is written with its true values, except for `by_region.tsv`. That one pairs activity with
     requester location, so it is written only when the update it carries moves more than
@@ -77,11 +83,12 @@ def generate_dandiset_summaries(
         Whether to generate summaries based on current undetermined status.
     region_disclosure_threshold : int, optional
         Number of resolved regions an update to a `by_region.tsv` must move at once to be published.
-        A resolved region is any label naming a physical place, such as `US/California`.
+        A resolved region is any label naming a physical place, such as `USA/CA`.
         Defaults to the upstream `REGION_DISCLOSURE_THRESHOLD`.
+    region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
+        Resolves each IP address to its region/service label. Defaults to an upstream `IpRegionResolver` over
+        the GeoLite2 database in the cache directory.
     """
-    import dandi.dandiapi
-
     cache_directory = (
         pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
     )
@@ -98,9 +105,41 @@ def generate_dandiset_summaries(
         content_id_to_usage_dandiset_path_url or DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL
     )
 
-    ip_to_region = s3_log_extraction.ip_utils.load_ip_cache(
-        cache_type="ip_to_region", cache_directory=cache_directory, use_encryption=False
-    )
+    owns_resolver = region_resolver is None
+    if owns_resolver:
+        region_resolver = s3_log_extraction.ip_utils.IpRegionResolver(cache_directory=cache_directory)
+    try:
+        _generate_dandiset_summaries(
+            cache_directory=cache_directory,
+            summary_directory=summary_directory,
+            pick=pick,
+            skip=skip,
+            max_workers=max_workers,
+            content_id_to_usage_dandiset_path_url=content_id_to_usage_dandiset_path_url,
+            api_url=api_url,
+            unassociated=unassociated,
+            region_disclosure_threshold=region_disclosure_threshold,
+            region_resolver=region_resolver,
+        )
+    finally:
+        if owns_resolver:
+            region_resolver.close()
+
+
+def _generate_dandiset_summaries(
+    *,
+    cache_directory: pathlib.Path,
+    summary_directory: pathlib.Path,
+    pick: list[str] | None,
+    skip: list[str] | None,
+    max_workers: int,
+    content_id_to_usage_dandiset_path_url: str,
+    api_url: str | None,
+    unassociated: bool,
+    region_disclosure_threshold: int,
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver,
+) -> None:
+    import dandi.dandiapi
 
     if unassociated:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_undetermined_dandi_asset_info(
@@ -114,7 +153,7 @@ def generate_dandiset_summaries(
             dandiset_id=dandiset_id,
             blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
             summary_directory=summary_directory,
-            ip_to_region=ip_to_region,
+            region_resolver=region_resolver,
             blob_id_to_asset_path=content_id_to_dandiset_path,
             region_disclosure_threshold=region_disclosure_threshold,
         )
@@ -154,11 +193,13 @@ def generate_dandiset_summaries(
                     dandiset_id=dandiset_id,
                     blob_directories=blob_directories,
                     summary_directory=summary_directory,
-                    ip_to_region=ip_to_region,
+                    region_resolver=region_resolver,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
                     region_disclosure_threshold=region_disclosure_threshold,
                 )
         else:
+            # The resolver is pickled into each task with the service ranges it has fetched; every worker process
+            # opens its own reader over the GeoLite2 database
             with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures = [
                     executor.submit(
@@ -166,7 +207,7 @@ def generate_dandiset_summaries(
                         dandiset_id=dandiset_id,
                         blob_directories=dandiset_id_to_local_content_directories.get(dandiset_id, []),
                         summary_directory=summary_directory,
-                        ip_to_region=ip_to_region,
+                        region_resolver=region_resolver,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
                         region_disclosure_threshold=region_disclosure_threshold,
                     )
@@ -199,7 +240,7 @@ def generate_dandiset_summaries(
     _summarize_archive_unique_requester_count(
         blob_directories=all_blob_directories,
         summary_file_path=summary_directory / "archive" / "requester_count.tsv",
-        ip_to_region=ip_to_region,
+        region_resolver=region_resolver,
     )
 
 
@@ -364,7 +405,7 @@ def _summarize_dandiset(
     dandiset_id: str,
     blob_directories: list[pathlib.Path],
     summary_directory: pathlib.Path,
-    ip_to_region: dict[str, str],
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver,
     blob_id_to_asset_path: dict[str, str],
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
@@ -394,14 +435,14 @@ def _summarize_dandiset(
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
-        ip_to_region=ip_to_region,
+        region_resolver=region_resolver,
         views_by_blob_directory=views_by_blob_directory,
         region_disclosure_threshold=region_disclosure_threshold,
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "requester_count.tsv",
-        ip_to_region=ip_to_region,
+        region_resolver=region_resolver,
     )
 
 
@@ -683,7 +724,7 @@ def _summarize_dandiset_by_region(
     *,
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
-    ip_to_region: dict[str, str],
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver,
     views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
@@ -700,11 +741,11 @@ def _summarize_dandiset_by_region(
 
         # A view is made by a single requester, so it belongs to the region of that one IP
         for _, view_ip in views_by_blob_directory.get(blob_directory, []):
-            number_of_views_by_region[ip_to_region.get(view_ip, "missing")] += 1
+            number_of_views_by_region[region_resolver.resolve(view_ip)] += 1
 
         ips_file_path = blob_directory / "ips.txt"
         ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
-        regions = [ip_to_region.get(ip, "missing") for ip in ips]
+        regions = [region_resolver.resolve(ip) for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
@@ -773,11 +814,24 @@ def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
     return unique_ips
 
 
+def _exclude_cloud_service_ips(
+    unique_ips: set[str], region_resolver: s3_log_extraction.ip_utils.RegionResolver | None
+) -> set[str]:
+    """Drop the IPs the resolver attributes to a known cloud/hosting/VPN service; keep all of them without one."""
+    if region_resolver is None:
+        return unique_ips
+    return {
+        ip
+        for ip in unique_ips
+        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(region_resolver.resolve(ip))
+    }
+
+
 def _summarize_dandiset_unique_requester_count(
     *,
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
-    ip_to_region: dict[str, str] | None = None,
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
 ) -> None:
     """
     Compute and save the unique requester count for a Dandiset.
@@ -795,17 +849,13 @@ def _summarize_dandiset_unique_requester_count(
         Paths to the per-blob extraction directories containing ``ips.txt`` files.
     summary_file_path : pathlib.Path
         Destination file where the count (as a string) will be written.
-    ip_to_region : dict of str to str, optional
-        Mapping of IP addresses to their region (or cloud service) labels, used to
+    region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
+        Resolves each IP address to its region (or cloud service) label, used to
         exclude cloud/hosting/VPN service IPs from the requester count.
     """
-    ip_to_region = ip_to_region or {}
-    unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {
-        ip
-        for ip in unique_ips
-        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
-    }
+    unique_ips = _exclude_cloud_service_ips(
+        _collect_unique_ips(blob_directories=blob_directories), region_resolver=region_resolver
+    )
 
     if not unique_ips:
         return
@@ -818,7 +868,7 @@ def _summarize_archive_unique_requester_count(
     *,
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
-    ip_to_region: dict[str, str] | None = None,
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
 ) -> None:
     """
     Compute and save the unique requester count for the archive.
@@ -836,17 +886,13 @@ def _summarize_archive_unique_requester_count(
         All per-blob extraction directories from all Dandisets.
     summary_file_path : pathlib.Path
         Destination file where the count will be written.
-    ip_to_region : dict of str to str, optional
-        Mapping of IP addresses to their region (or cloud service) labels, used to
+    region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
+        Resolves each IP address to its region (or cloud service) label, used to
         exclude cloud/hosting/VPN service IPs from the requester count.
     """
-    ip_to_region = ip_to_region or {}
-    unique_ips = _collect_unique_ips(blob_directories=blob_directories)
-    unique_ips = {
-        ip
-        for ip in unique_ips
-        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(ip_to_region.get(ip, ""))
-    }
+    unique_ips = _exclude_cloud_service_ips(
+        _collect_unique_ips(blob_directories=blob_directories), region_resolver=region_resolver
+    )
 
     if not unique_ips:
         return

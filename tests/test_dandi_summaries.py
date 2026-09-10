@@ -5,16 +5,17 @@ import shutil
 import pandas
 import py
 import s3_log_extraction.summarize
+from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _summarize_archive_by_asset_type_per_week,
 )
 
-# A stand-in geolocation of the single requester of the example logs, copied into the `ips` cache subdirectory
-# of a test cache so that the summaries have a resolved region to report. The requester is a documentation
-# range address (RFC 5737), which a real geolocation resolves to `bogon` rather than to any place.
-MOCKED_IP_TO_REGION = "192.0.2.0: US/California\n"
+# A stand-in geolocation of the single requester of the example logs, so that the summaries have a resolved region
+# to report. The requester is a documentation range address (RFC 5737), which a real resolution labels `bogon`
+# rather than any place.
+MOCKED_REGION_RESOLVER = MappingRegionResolver({"192.0.2.0": "US/California"})
 
 
 def test_dandiset_summaries(tmpdir: py.path.local):
@@ -29,23 +30,26 @@ def test_dandiset_summaries(tmpdir: py.path.local):
     test_summary_dir = test_dir / "summaries"
 
     shutil.copytree(src=expected_extraction_dir, dst=test_extraction_dir)
-    ip_cache_dir = test_dir / "ips"
-    ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "ip_to_region.yaml").write_text(MOCKED_IP_TO_REGION)
 
     # The example logs have a single resolved region, which is below the default disclosure threshold
-    dandi_s3_log_extraction.summarize.generate_dandiset_summaries(cache_directory=test_dir, workers=1)
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
-        cache_directory=test_dir, workers=1, unassociated=True
+        cache_directory=test_dir, workers=1, region_resolver=MOCKED_REGION_RESOLVER
+    )
+    dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
+        cache_directory=test_dir, workers=1, unassociated=True, region_resolver=MOCKED_REGION_RESOLVER
     )
     assert list(test_summary_dir.rglob(pattern="by_region.tsv")) == []
 
     # Lowering the threshold to zero publishes the by-region summaries of that single region
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
-        cache_directory=test_dir, workers=1, region_disclosure_threshold=0
+        cache_directory=test_dir, workers=1, region_disclosure_threshold=0, region_resolver=MOCKED_REGION_RESOLVER
     )
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
-        cache_directory=test_dir, workers=1, unassociated=True, region_disclosure_threshold=0
+        cache_directory=test_dir,
+        workers=1,
+        unassociated=True,
+        region_disclosure_threshold=0,
+        region_resolver=MOCKED_REGION_RESOLVER,
     )
 
     # The archive requester count is written by the Dandiset summaries above, since it is a union over the

@@ -1,24 +1,15 @@
-"""Tests for s3_log_extraction.ip_utils internal functions covering uncovered code paths."""
+"""Tests for the upstream ``s3_log_extraction.ip_utils`` behaviors the DANDI pipeline relies on."""
 
-import os
 import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
+import s3_log_extraction
 import yaml
+from s3_log_extraction.ip_utils import IpRegionResolver, MappingRegionResolver
 from s3_log_extraction.ip_utils._ip_utils import (
     _get_cidr_address_ranges_and_subregions,
     _request_cidr_range,
-)
-from s3_log_extraction.ip_utils._update_ip_to_region_codes import (
-    _get_region_code_from_ip_address,
-    update_ip_to_region_codes,
-)
-from s3_log_extraction.ip_utils._update_region_code_coordinates import (
-    _get_coordinates_from_opencage,
-    _get_coordinates_from_region_code,
-    _get_service_coordinates_from_ipinfo,
-    update_region_code_coordinates,
 )
 
 
@@ -187,279 +178,93 @@ def test_get_cidr_address_ranges_azure_raises() -> None:
     _clear_lru_caches()
 
 
-# ─── update_ip_to_region_codes ─────────────────────────────────────────────
+# ─── Geolocation steps of the DANDI pipeline ─────────────────────────────────
+
+_NO_SERVICE_NETWORKS = {"GitHub": [], "AWS": [], "GCP": [], "VPN": []}
 
 
-@pytest.mark.ai_generated
-def test_update_ip_to_region_codes_no_api_key(tmp_path: pathlib.Path) -> None:
-    """update_ip_to_region_codes raises ValueError when IPINFO_API_KEY is not set."""
-    env = {k: v for k, v in os.environ.items() if k != "IPINFO_API_KEY"}
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValueError, match="IPINFO_API_KEY"):
-            update_ip_to_region_codes(cache_directory=tmp_path, use_encryption=False)
-
-
-@pytest.mark.ai_generated
-def test_update_ip_to_region_codes_with_mock(tmp_path: pathlib.Path) -> None:
-    """update_ip_to_region_codes processes IPs correctly with mocked ipinfo."""
-    # Write ips.txt in the extraction subdirectory with 3 test IP addresses
-    extraction_dir = tmp_path / "extraction"
-    extraction_dir.mkdir(parents=True)
-    (extraction_dir / "ips.txt").write_text("192.0.2.1\n192.0.2.2\n192.0.2.3\n")
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-
-    # Mock _get_region_code_from_ip_address to return three different scenarios
-    call_results = [None, "unknown", "US/California"]
-
-    def mock_get_region_code(ip_address, ipinfo_handler):
-        return call_results.pop(0)
-
-    with (
-        patch.dict(os.environ, {"IPINFO_API_KEY": "fake_key"}),
-        patch("ipinfo.getHandler"),
-        patch(
-            "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_region_code_from_ip_address",
-            side_effect=mock_get_region_code,
-        ),
-    ):
-        update_ip_to_region_codes(cache_directory=tmp_path, use_encryption=False)
-
-    # ip_to_region.yaml should contain only the non-None, non-"unknown" entry
-    result = yaml.safe_load((ip_cache_dir / "ip_to_region.yaml").read_text())
-    assert result is not None
-    assert "US/California" in result.values()
-
-
-@pytest.mark.ai_generated
-def test_update_ip_to_region_codes_with_batch_limit(tmp_path: pathlib.Path) -> None:
-    """update_ip_to_region_codes respects batch_limit parameter."""
-    extraction_dir = tmp_path / "extraction"
-    extraction_dir.mkdir(parents=True)
-    # More IPs than batch_limit would process
-    ips_text = "\n".join(f"192.0.2.{i}" for i in range(1, 6))
-    (extraction_dir / "ips.txt").write_text(ips_text)
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-
-    call_log = []
-
-    def mock_get_region_code(ip_address, ipinfo_handler):
-        call_log.append(ip_address)
-        return "US/TestRegion"
-
-    with (
-        patch.dict(os.environ, {"IPINFO_API_KEY": "fake_key"}),
-        patch("ipinfo.getHandler"),
-        patch(
-            "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_region_code_from_ip_address",
-            side_effect=mock_get_region_code,
-        ),
-    ):
-        update_ip_to_region_codes(cache_directory=tmp_path, batch_limit=1, batch_size=2, use_encryption=False)
-
-    # With batch_limit=1 and batch_size=2, at most 2 IPs are processed
-    assert len(call_log) <= 2
-
-
-# ─── _get_region_code_from_ip_address ──────────────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.ai_generated
-def test_get_region_code_service_match_with_subregion() -> None:
-    """_get_region_code_from_ip_address matches a CIDR range and includes subregion."""
-    _clear_lru_caches()
-    mock_handler = MagicMock()
-
-    with patch(
-        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
-    ) as mock_cidr:
-        # First service ("GitHub") matches IP 192.0.2.4 in 192.0.2.0/24 with subregion "us-east-1"
-        mock_cidr.return_value = [("192.0.2.0/24", "us-east-1")]
-
-        result = _get_region_code_from_ip_address(
-            ip_address="192.0.2.4",
-            ipinfo_handler=mock_handler,
-        )
-
-    assert result == "GitHub/us-east-1"
-    _clear_lru_caches()
-
-
-@pytest.mark.ai_generated
-def test_get_region_code_service_match_no_subregion() -> None:
-    """_get_region_code_from_ip_address matches a CIDR range without a subregion."""
-    _clear_lru_caches()
-    mock_handler = MagicMock()
-
-    with patch(
-        "s3_log_extraction.ip_utils._update_ip_to_region_codes._get_cidr_address_ranges_and_subregions"
-    ) as mock_cidr:
-        # No subregion (None)
-        mock_cidr.return_value = [("192.0.2.0/24", None)]
-
-        result = _get_region_code_from_ip_address(
-            ip_address="192.0.2.4",
-            ipinfo_handler=mock_handler,
-        )
-
-    assert result == "GitHub"
-    _clear_lru_caches()
-
-
-# ─── update_region_code_coordinates ──────────────────────────────────────────
-
-
-@pytest.mark.ai_generated
-def test_update_region_code_coordinates_no_keys(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates raises ValueError when API keys are missing."""
-    env = {k: v for k, v in os.environ.items() if k not in ("OPENCAGE_API_KEY", "IPINFO_API_KEY")}
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValueError, match="API_KEY"):
-            update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
-
-
-@pytest.mark.ai_generated
-def test_update_region_code_coordinates_no_index_file(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates raises FileNotFoundError when ip_to_region.yaml is absent."""
-    with (
-        patch.dict(os.environ, {"OPENCAGE_API_KEY": "fake", "IPINFO_API_KEY": "fake"}),
-        patch("ipinfo.getHandler"),
-        patch("opencage.geocoder.OpenCageGeocode"),
-    ):
-        with pytest.raises(FileNotFoundError):
-            update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
-
-
-@pytest.mark.ai_generated
-def test_update_region_code_coordinates_full_mock(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates processes region codes with all mock dependencies."""
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-
-    # Create ip_to_region.yaml with several region types
-    (ip_cache_dir / "ip_to_region.yaml").write_text(
-        "192.0.2.1: 'US/California'\n192.0.2.2: 'AWS/us-east-1'\n192.0.2.3: 'bogon'\n"
+def _write_by_region_summary(summary_file_path: pathlib.Path, regions: list[str]) -> None:
+    """Write a minimal published by-region summary listing the given region labels."""
+    summary_file_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = "\n".join(f"{region}\t1\t1\t0\t1" for region in regions)
+    summary_file_path.write_text(
+        f"region\tbytes_sent\tnumber_of_requests\tnumber_of_downloads\tnumber_of_views\n{rows}\n"
     )
 
-    mock_ipinfo_client = MagicMock()
-    mock_opencage_client = MagicMock()
-    mock_opencage_client.geocode.return_value = [{"geometry": {"lat": 37.77, "lng": -122.41}}]
 
-    with (
-        patch.dict(os.environ, {"OPENCAGE_API_KEY": "fake", "IPINFO_API_KEY": "fake"}),
-        patch("ipinfo.getHandler", return_value=mock_ipinfo_client),
-        patch("opencage.geocoder.OpenCageGeocode", return_value=mock_opencage_client),
-        patch(
-            "s3_log_extraction.ip_utils._update_region_code_coordinates._get_cidr_address_ranges_and_subregions"
-        ) as mock_cidr,
-    ):
-        # AWS/us-east-1 → service path via _get_service_coordinates_from_ipinfo
-        mock_cidr.return_value = [("52.94.0.0/22", "us-east-1")]
-        mock_ipinfo_details = MagicMock()
-        mock_ipinfo_details.details = {"latitude": 39.0, "longitude": -77.0}
-        mock_ipinfo_client.getDetails.return_value = mock_ipinfo_details
+@pytest.mark.ai_generated
+def test_resolver_classifies_without_database_when_no_address_needs_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Service and non-routable addresses are labeled without MaxMind credentials or the GeoLite2 database."""
+    monkeypatch.delenv("MAXMIND_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("MAXMIND_LICENSE_KEY", raising=False)
+    service_networks = {"GitHub": [], "AWS": [("203.0.113.0/24", "us-east-1")], "GCP": [], "VPN": []}
 
-        update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
-
-    output_file = ip_cache_dir / "region_codes_to_coordinates.yaml"
-    assert output_file.exists()
+    with patch("s3_log_extraction.ip_utils._resolver.open_geolite2_database") as mock_open:
+        with IpRegionResolver(service_networks=service_networks) as resolver:
+            assert resolver.resolve("192.0.2.1") == "bogon"
+            assert resolver.resolve("203.0.113.7") == "AWS/us-east-1"
+    mock_open.assert_not_called()
 
 
 @pytest.mark.ai_generated
-def test_update_region_code_coordinates_opencage_failure(tmp_path: pathlib.Path) -> None:
-    """update_region_code_coordinates prints message when OpenCage returns no results."""
-    ip_cache_dir = tmp_path / "ips"
-    ip_cache_dir.mkdir(parents=True)
-    (ip_cache_dir / "ip_to_region.yaml").write_text("1: 'XX/UnknownRegion'\n")
+def test_resolver_places_public_address_with_geolite2() -> None:
+    """A public address outside every service range is placed by the database, as an alpha-3 label."""
+    response = MagicMock()
+    response.country.iso_code = "US"
+    response.subdivisions = [MagicMock(iso_code="CA")]
+    reader = MagicMock()
+    reader.city.return_value = response
 
-    mock_opencage_client = MagicMock()
-    mock_opencage_client.geocode.return_value = []  # empty → failure
+    resolver = IpRegionResolver(service_networks=_NO_SERVICE_NETWORKS, geolite2_reader=reader)
 
-    with (
-        patch.dict(os.environ, {"OPENCAGE_API_KEY": "fake", "IPINFO_API_KEY": "fake"}),
-        patch("ipinfo.getHandler"),
-        patch("opencage.geocoder.OpenCageGeocode", return_value=mock_opencage_client),
-        patch("builtins.print") as mock_print,
-    ):
-        update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
+    assert resolver.resolve("8.8.8.8") == "USA/CA"
+    reader.city.assert_called_once_with("8.8.8.8")
+
+
+@pytest.mark.ai_generated
+def test_mapping_region_resolver_stands_in_for_a_live_one() -> None:
+    """A fixed mapping resolves its addresses and labels every other address ``missing``."""
+    resolver = MappingRegionResolver({"192.0.2.1": "USA/CA"})
+
+    assert resolver.resolve("192.0.2.1") == "USA/CA"
+    assert resolver.resolve("192.0.2.2") == "missing"
+
+
+@pytest.mark.ai_generated
+def test_update_region_code_coordinates_without_summaries(tmp_path: pathlib.Path) -> None:
+    """update_region_code_coordinates writes only the default entries when no summary has been published."""
+    s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
+
+    coordinates = yaml.safe_load((tmp_path / "ips" / "region_codes_to_coordinates.yaml").read_text())
+    assert coordinates["bogon"] == {"latitude": None, "longitude": None}
+    assert not any("/" in label and not label.startswith(("AWS", "GCP")) for label in coordinates)
+
+
+@pytest.mark.ai_generated
+def test_update_region_code_coordinates_runs_offline(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Geographic labels of the published summaries are located from the bundled ISO 3166 tables, offline."""
+    _write_by_region_summary(tmp_path / "summaries" / "000001" / "by_region.tsv", regions=["USA/CA", "DEU/BE", "bogon"])
+
+    monkeypatch.delenv("MAXMIND_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("MAXMIND_LICENSE_KEY", raising=False)
+
+    with patch("requests.get") as mock_get:
+        s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
+    mock_get.assert_not_called()
+
+    coordinates = yaml.safe_load((tmp_path / "ips" / "region_codes_to_coordinates.yaml").read_text())
+    assert coordinates["USA/CA"] == s3_log_extraction.ip_utils.get_region_coordinates("USA/CA")
+    assert coordinates["DEU/BE"] == s3_log_extraction.ip_utils.get_region_coordinates("DEU/BE")
+    assert coordinates["bogon"] == {"latitude": None, "longitude": None}
+
+
+@pytest.mark.ai_generated
+def test_update_region_code_coordinates_reports_unknown_labels(tmp_path: pathlib.Path) -> None:
+    """A label the ISO 3166 tables do not know is reported rather than silently dropped."""
+    _write_by_region_summary(tmp_path / "summaries" / "000001" / "by_region.tsv", regions=["XX/YY"])
+
+    with patch("builtins.print") as mock_print:
+        s3_log_extraction.ip_utils.update_region_code_coordinates(cache_directory=tmp_path, use_encryption=False)
 
     mock_print.assert_called_once()
-    assert "XX/UnknownRegion" in mock_print.call_args[0][0]
-
-
-# ─── _get_coordinates_from_region_code ───────────────────────────────────────
-
-
-@pytest.mark.ai_generated
-def test_get_coordinates_from_region_code_service() -> None:
-    """_get_coordinates_from_region_code dispatches to service path for known services."""
-    mock_ipinfo_client = MagicMock()
-    mock_ipinfo_details = MagicMock()
-    mock_ipinfo_details.details = {"latitude": 39.0, "longitude": -77.0}
-    mock_ipinfo_client.getDetails.return_value = mock_ipinfo_details
-    service_coordinates: dict = {}
-
-    with patch(
-        "s3_log_extraction.ip_utils._update_region_code_coordinates._get_cidr_address_ranges_and_subregions"
-    ) as mock_cidr:
-        mock_cidr.return_value = [("52.94.0.1/32", "us-east-1")]
-
-        result = _get_coordinates_from_region_code(
-            country_and_region_code="AWS/us-east-1",
-            ipinfo_client=mock_ipinfo_client,
-            opencage_client=MagicMock(),
-            service_coordinates=service_coordinates,
-            opencage_failures=[],
-        )
-
-    assert result == {"latitude": 39.0, "longitude": -77.0}
-
-
-@pytest.mark.ai_generated
-def test_get_coordinates_from_region_code_regular() -> None:
-    """_get_coordinates_from_region_code dispatches to OpenCage path for non-service regions."""
-    mock_opencage_client = MagicMock()
-    mock_opencage_client.geocode.return_value = [{"geometry": {"lat": 37.77, "lng": -122.41}}]
-
-    result = _get_coordinates_from_region_code(
-        country_and_region_code="US/California",
-        ipinfo_client=MagicMock(),
-        opencage_client=mock_opencage_client,
-        service_coordinates={},
-        opencage_failures=[],
-    )
-
-    assert result == {"latitude": 37.77, "longitude": -122.41}
-
-
-@pytest.mark.ai_generated
-def test_get_service_coordinates_cached() -> None:
-    """_get_service_coordinates_from_ipinfo returns cached coordinates immediately."""
-    cached_coords = {"latitude": 1.0, "longitude": 2.0}
-    service_coordinates = {"AWS": cached_coords}  # Cached by service_name (not subregion key)
-
-    result = _get_service_coordinates_from_ipinfo(
-        country_and_region_code="AWS/us-east-1",
-        ipinfo_client=MagicMock(),
-        service_coordinates=service_coordinates,
-    )
-
-    assert result == cached_coords
-
-
-@pytest.mark.ai_generated
-def test_get_coordinates_from_opencage_no_results() -> None:
-    """_get_coordinates_from_opencage returns None and records failure when no results."""
-    mock_opencage_client = MagicMock()
-    mock_opencage_client.geocode.return_value = []
-    failures: list = []
-
-    result = _get_coordinates_from_opencage(
-        country_and_region_code="ZZ/Nowhere",
-        opencage_client=mock_opencage_client,
-        opencage_failures=failures,
-    )
-
-    assert result is None
-    assert "ZZ/Nowhere" in failures
+    assert "XX/YY" in mock_print.call_args[0][0]

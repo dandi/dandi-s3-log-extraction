@@ -40,5 +40,6 @@ jobs:
 #    uses: ./.github/workflows/remote_testing.yml
 #    secrets:
 #      IP_HASH_SALT: ${{ secrets.IP_HASH_SALT }}
-#      IPINFO_API_KEY: ${{ secrets.IPINFO_API_KEY }}
+#      MAXMIND_ACCOUNT_ID: ${{ secrets.MAXMIND_ACCOUNT_ID }}
+#      MAXMIND_LICENSE_KEY: ${{ secrets.MAXMIND_LICENSE_KEY }}
 #      CODECOV_CREDENTIALS: ${{ secrets.CODECOV_CREDENTIALS }}
