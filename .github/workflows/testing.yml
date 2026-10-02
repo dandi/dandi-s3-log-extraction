@@ -62,5 +62,5 @@ jobs:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
-          fail_ci_if_error: true
+          fail_ci_if_error: ${{ github.event.pull_request.user.login != 'dependabot[bot]' }}
           verbose: true
