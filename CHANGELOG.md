@@ -4,6 +4,7 @@
 
 ### 🏠 Internal
 
+- Disabled Dependabot rebases, which force-push and so fail on protected branches. ([#102](https://github.com/dandi/dandi-s3-log-extraction/pull/102))
 - Codecov upload errors no longer fail CI on Dependabot pull requests, which cannot read the Codecov token. ([#101](https://github.com/dandi/dandi-s3-log-extraction/pull/101))
 
 ### 🔩 Dependency Updates
