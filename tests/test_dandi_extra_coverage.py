@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas
 import pytest
+import s3_log_extraction.config
 from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction
@@ -18,6 +19,7 @@ from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import (
     _collect_views_by_blob_directory,
     _summarize_archive_by_asset_type_per_week,
     _summarize_archive_unique_requester_count,
+    _summarize_dandiset,
     _summarize_dandiset_by_asset,
     _summarize_dandiset_by_day,
     _summarize_dandiset_by_region,
@@ -269,7 +271,10 @@ def test_summarize_dandiset_by_day_true_counts(tmp_path: pathlib.Path) -> None:
     _summarize_dandiset_by_day(
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
-        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        views_by_blob_directory=_collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        ),
+        included_by_blob_directory={},
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
@@ -303,7 +308,10 @@ def test_summarize_dandiset_by_asset_true_counts(tmp_path: pathlib.Path) -> None
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
         blob_id_to_asset_path=blob_id_to_asset_path,
-        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        views_by_blob_directory=_collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        ),
+        included_by_blob_directory={},
     )
 
     result = pandas.read_table(filepath_or_buffer=summary_file_path)
@@ -331,7 +339,10 @@ def test_summarize_dandiset_by_region_true_counts(tmp_path: pathlib.Path) -> Non
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
         region_resolver=MappingRegionResolver(ip_to_region),
-        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        views_by_blob_directory=_collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        ),
+        included_by_blob_directory={},
         region_disclosure_threshold=0,
     )
 
@@ -366,7 +377,10 @@ def test_summaries_label_unplaced_requesters_as_missing(tmp_path: pathlib.Path) 
         blob_directories=[blob_dir],
         summary_file_path=by_region_file_path,
         region_resolver=MappingRegionResolver(ip_to_region),
-        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        views_by_blob_directory=_collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        ),
+        included_by_blob_directory={},
         region_disclosure_threshold=0,
     )
     by_region = pandas.read_table(filepath_or_buffer=by_region_file_path)
@@ -399,7 +413,10 @@ def test_summarize_dandiset_by_region_withheld_below_threshold(tmp_path: pathlib
         blob_directories=[blob_dir],
         summary_file_path=summary_file_path,
         region_resolver=MappingRegionResolver(ip_to_region),
-        views_by_blob_directory=_collect_views_by_blob_directory([blob_dir]),
+        views_by_blob_directory=_collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        ),
+        included_by_blob_directory={},
     )
 
     assert not summary_file_path.exists()
@@ -418,7 +435,9 @@ def test_collect_views_by_blob_directory_sessionizes_streaming_requests(tmp_path
         downloads=[0, 0, 0, 1],
     )
 
-    views_by_blob_directory = _collect_views_by_blob_directory([blob_dir])
+    views_by_blob_directory = _collect_views_by_blob_directory(
+        blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+    )
 
     assert views_by_blob_directory[blob_dir] == [("2020-01-01", "192.0.2.1"), ("2020-01-02", "192.0.2.1")]
 
@@ -426,7 +445,14 @@ def test_collect_views_by_blob_directory_sessionizes_streaming_requests(tmp_path
 @pytest.mark.ai_generated
 def test_collect_views_by_blob_directory_skips_missing_blob_dir(tmp_path: pathlib.Path) -> None:
     """Blob directories that were never accessed have no extracted files and so no views."""
-    assert _collect_views_by_blob_directory([tmp_path / "nonexistent"]) == {}
+    assert (
+        _collect_views_by_blob_directory(
+            blob_directories=[tmp_path / "nonexistent"],
+            region_resolver=MappingRegionResolver({}),
+            excluded_ips=frozenset(),
+        )
+        == {}
+    )
 
 
 @pytest.mark.ai_generated
@@ -439,7 +465,9 @@ def test_collect_views_by_blob_directory_raises_on_incomplete_extraction(tmp_pat
     (blob_dir / "bytes_sent.txt").write_text("100\n")
 
     with pytest.raises(RuntimeError, match="download.txt"):
-        _collect_views_by_blob_directory([blob_dir])
+        _collect_views_by_blob_directory(
+            blob_directories=[blob_dir], region_resolver=MappingRegionResolver({}), excluded_ips=frozenset()
+        )
 
 
 # ─── _collect_unique_ips ─────────────────────────────────────────────────────
@@ -546,11 +574,11 @@ def test_summarize_dandiset_unique_requester_count_missing_blob_dir(tmp_path: pa
 
 
 @pytest.mark.ai_generated
-def test_summarize_dandiset_unique_requester_count_excludes_cloud_service_ips(tmp_path: pathlib.Path) -> None:
-    """_summarize_dandiset_unique_requester_count excludes IPs attributed to cloud/hosting/VPN services."""
+def test_summarize_dandiset_unique_requester_count_excludes_only_github_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_dandiset_unique_requester_count excludes GitHub IPs but counts other cloud services and VPNs."""
     blob_dir = tmp_path / "blob1"
     blob_dir.mkdir()
-    # 55 "real" unique IPs plus a handful of cloud service IPs that should be excluded
+    # 55 "real" unique IPs plus a handful of cloud service IPs, of which only the GitHub one is excluded
     real_ips = [f"192.0.2.{i}" for i in range(55)]
     cloud_ips = ["198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"]
     (blob_dir / "ips.txt").write_text("\n".join(real_ips + cloud_ips))
@@ -569,8 +597,8 @@ def test_summarize_dandiset_unique_requester_count_excludes_cloud_service_ips(tm
         region_resolver=MappingRegionResolver(ip_to_region),
     )
 
-    # 55 real unique IPs (cloud service IPs excluded from the count)
-    assert summary_file_path.read_text() == "55"
+    # 55 real unique IPs plus the AWS, GCP, and VPN IPs (only the GitHub IP is excluded from the count)
+    assert summary_file_path.read_text() == "58"
 
 
 # ─── _summarize_archive_unique_requester_count ────────────────────────────────
@@ -610,8 +638,8 @@ def test_summarize_archive_unique_requester_count_empty(tmp_path: pathlib.Path) 
 
 
 @pytest.mark.ai_generated
-def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp_path: pathlib.Path) -> None:
-    """_summarize_archive_unique_requester_count excludes IPs attributed to cloud/hosting/VPN services."""
+def test_summarize_archive_unique_requester_count_excludes_only_github_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count excludes GitHub IPs but counts other cloud services."""
     blob_dir1 = tmp_path / "blob1"
     blob_dir1.mkdir()
     (blob_dir1 / "ips.txt").write_text("\n".join(f"192.0.2.{i}" for i in range(30)))
@@ -629,5 +657,136 @@ def test_summarize_archive_unique_requester_count_excludes_cloud_service_ips(tmp
         region_resolver=MappingRegionResolver(ip_to_region),
     )
 
-    # 55 real unique IPs (cloud service IPs excluded from the count)
-    assert archive_file.read_text() == "55"
+    # 55 real unique IPs plus the AWS IP (only the GitHub IP is excluded from the count)
+    assert archive_file.read_text() == "56"
+
+
+@pytest.mark.ai_generated
+def test_summarize_archive_unique_requester_count_excludes_listed_ips(tmp_path: pathlib.Path) -> None:
+    """_summarize_archive_unique_requester_count leaves the listed addresses out of the union."""
+    blob_dir1 = tmp_path / "blob1"
+    blob_dir1.mkdir()
+    (blob_dir1 / "ips.txt").write_text("192.0.2.10\n192.0.2.20\n")
+
+    blob_dir2 = tmp_path / "blob2"
+    blob_dir2.mkdir()
+    (blob_dir2 / "ips.txt").write_text("192.0.2.20\n192.0.2.30\n")
+
+    archive_file = tmp_path / "archive" / "requester_count.tsv"
+    _summarize_archive_unique_requester_count(
+        blob_directories=[blob_dir1, blob_dir2],
+        summary_file_path=archive_file,
+        excluded_ips=frozenset({"192.0.2.20"}),
+    )
+
+    assert archive_file.read_text() == "2"
+
+
+# ─── excluded and automated requesters across every summary ──────────────────
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize(
+    (
+        "first_requester_region",
+        "excluded_ips",
+        "expected_bytes_sent",
+        "expected_requests",
+        "expected_views",
+        "expected_requesters",
+    ),
+    [
+        pytest.param("USA/CA", frozenset({"192.0.2.1"}), 200, 1, 1, 1, id="excluded_ip_leaves_every_summary"),
+        pytest.param("GitHub", frozenset(), 300, 2, 1, 1, id="github_leaves_views_and_requesters_only"),
+        pytest.param("Azure/eastus", frozenset(), 300, 2, 2, 2, id="other_cloud_counts_everywhere"),
+    ],
+)
+def test_summarize_dandiset_exclusions(
+    tmp_path: pathlib.Path,
+    first_requester_region: str,
+    excluded_ips: frozenset[str],
+    expected_bytes_sent: int,
+    expected_requests: int,
+    expected_views: int,
+    expected_requesters: int,
+) -> None:
+    """Every summary of a Dandiset leaves out the listed addresses, and GitHub only from views and requesters."""
+    blob_dir = tmp_path / "extraction" / "blob1"
+    _write_blob_directory(
+        blob_directory=blob_dir,
+        timestamps=["200101050635", "200101060635"],
+        ips=["192.0.2.1", "192.0.2.2"],
+        bytes_sent=[100, 200],
+        downloads=[0, 0],
+    )
+    region_resolver = MappingRegionResolver({"192.0.2.1": first_requester_region, "192.0.2.2": "USA/NY"})
+    summary_directory = tmp_path / "summaries"
+
+    _summarize_dandiset(
+        dandiset_id="000001",
+        blob_directories=[blob_dir],
+        summary_directory=summary_directory,
+        region_resolver=region_resolver,
+        blob_id_to_asset_path={"blob1": "sub-01/sub-01.nwb"},
+        region_disclosure_threshold=0,
+        excluded_ips=excluded_ips,
+    )
+
+    dandiset_summary_directory = summary_directory / "000001"
+    by_day = pandas.read_table(filepath_or_buffer=dandiset_summary_directory / "by_day.tsv")
+    by_asset = pandas.read_table(filepath_or_buffer=dandiset_summary_directory / "by_asset.tsv")
+    by_region = pandas.read_table(filepath_or_buffer=dandiset_summary_directory / "by_region.tsv")
+    by_asset_per_week = pandas.read_table(filepath_or_buffer=dandiset_summary_directory / "by_asset_per_week.tsv")
+    by_asset_type_per_week = pandas.read_table(
+        filepath_or_buffer=dandiset_summary_directory / "by_asset_type_per_week.tsv"
+    )
+    requester_count = (dandiset_summary_directory / "requester_count.tsv").read_text()
+
+    for summary in (by_day, by_asset, by_region):
+        assert summary["bytes_sent"].sum() == expected_bytes_sent
+        assert summary["number_of_requests"].sum() == expected_requests
+        assert summary["number_of_views"].sum() == expected_views
+    assert by_asset_per_week["sub-01/sub-01.nwb"].sum() == expected_bytes_sent
+    assert by_asset_type_per_week["Neurophysiology"].sum() == expected_bytes_sent
+    assert requester_count == str(expected_requesters)
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize(
+    ("excluded_ips", "expected_excluded_ips"),
+    [
+        pytest.param(None, frozenset({"192.0.2.1"}), id="defaults_to_excluded_ips_file"),
+        pytest.param([], frozenset(), id="empty_overrides_excluded_ips_file"),
+        pytest.param(["192.0.2.2"], frozenset({"192.0.2.2"}), id="explicit_overrides_excluded_ips_file"),
+    ],
+)
+def test_generate_dandiset_summaries_excluded_ips_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    excluded_ips: list[str] | None,
+    expected_excluded_ips: frozenset[str],
+) -> None:
+    """generate_dandiset_summaries reads the upstream excluded IPs file unless the addresses are passed."""
+    monkeypatch.setattr(s3_log_extraction.config, "get_excluded_ips", lambda: frozenset({"192.0.2.1"}))
+
+    with (
+        patch(
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
+            return_value=_make_fake_jsonl_response({}),
+        ),
+        patch("dandi.dandiapi.DandiAPIClient"),
+        patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset") as mock_summarize,
+        patch(
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_archive_unique_requester_count"
+        ) as mock_archive_count,
+    ):
+        dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
+            cache_directory=tmp_path,
+            workers=1,
+            pick=["000001"],
+            region_resolver=MappingRegionResolver({}),
+            excluded_ips=excluded_ips,
+        )
+
+    assert mock_summarize.call_args.kwargs["excluded_ips"] == expected_excluded_ips
+    assert mock_archive_count.call_args.kwargs["excluded_ips"] == expected_excluded_ips

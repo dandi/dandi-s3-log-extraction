@@ -244,7 +244,12 @@ def _update_summaries_cli(
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
     cache_directory: str | None = None,
 ) -> None:
-    """Generate condensed summaries of activity."""
+    """
+    Generate condensed summaries of activity.
+
+    Any addresses listed in '~/.s3-log-extraction/excluded_ips.txt' are left out of every summary. Requesters in the
+    published GitHub ranges are left out of the view and requester counts only.
+    """
     match mode:
         case "archive":
             # TODO: replace with error message instructing user to use s3logextraction directly

@@ -85,6 +85,9 @@ def test_summarize_dataset_by_asset_no_bytes_sent(tmp_path: pathlib.Path) -> Non
         asset_directories=[asset_dir],
         summary_file_path=summary_file_path,
         views_by_asset_directory={},
+        included_by_asset_directory={},
+        dataset_id="dataset1",
+        extraction_directory=tmp_path / "extraction",
     )
 
     # No output because the only asset was skipped
@@ -100,6 +103,9 @@ def test_summarize_dataset_by_asset_empty_list(tmp_path: pathlib.Path) -> None:
         asset_directories=[],
         summary_file_path=summary_file_path,
         views_by_asset_directory={},
+        included_by_asset_directory={},
+        dataset_id="dataset1",
+        extraction_directory=tmp_path / "extraction",
     )
 
     assert not summary_file_path.exists()
@@ -119,6 +125,7 @@ def test_summarize_dataset_by_day_empty_result(tmp_path: pathlib.Path) -> None:
         asset_directories=[asset_dir],
         summary_file_path=summary_file_path,
         views_by_asset_directory={},
+        included_by_asset_directory={},
     )
 
     assert not summary_file_path.exists()
@@ -138,6 +145,7 @@ def test_summarize_dataset_by_region_empty_result(tmp_path: pathlib.Path) -> Non
         summary_file_path=summary_file_path,
         region_resolver=MappingRegionResolver({}),
         views_by_asset_directory={},
+        included_by_asset_directory={},
     )
 
     assert not summary_file_path.exists()

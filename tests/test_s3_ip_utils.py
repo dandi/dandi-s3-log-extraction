@@ -82,15 +82,6 @@ def test_request_cidr_range_vpn() -> None:
     _clear_lru_caches()
 
 
-@pytest.mark.ai_generated
-def test_request_cidr_range_azure_raises() -> None:
-    """_request_cidr_range raises NotImplementedError for Azure service."""
-    _clear_lru_caches()
-    with pytest.raises(NotImplementedError):
-        _request_cidr_range("Azure")
-    _clear_lru_caches()
-
-
 # ─── _get_cidr_address_ranges_and_subregions ──────────────────────────────────
 
 
@@ -166,21 +157,29 @@ def test_get_cidr_address_ranges_vpn() -> None:
 
 
 @pytest.mark.ai_generated
-def test_get_cidr_address_ranges_azure_raises() -> None:
-    """_get_cidr_address_ranges_and_subregions covers the Azure case when _request_cidr_range is mocked."""
+def test_get_cidr_address_ranges_azure() -> None:
+    """_get_cidr_address_ranges_and_subregions labels Azure ranges by region, keeping unregioned ones."""
     _clear_lru_caches()
+    fake_cidr = {
+        "values": [
+            {"name": "AzureCloud", "properties": {"region": "", "addressPrefixes": ["198.51.100.0/24"]}},
+            {"name": "AzureCloud.eastus", "properties": {"region": "eastus", "addressPrefixes": ["192.0.2.0/24"]}},
+        ]
+    }
+
     with patch(
         "s3_log_extraction.ip_utils._ip_utils._request_cidr_range",
-        return_value={},
+        return_value=fake_cidr,
     ):
-        with pytest.raises(NotImplementedError):
-            _get_cidr_address_ranges_and_subregions(service_name="Azure")
+        result = _get_cidr_address_ranges_and_subregions(service_name="Azure")
+
+    assert sorted(result) == [("192.0.2.0/24", "eastus"), ("198.51.100.0/24", None)]
     _clear_lru_caches()
 
 
 # ─── Geolocation steps of the DANDI pipeline ─────────────────────────────────
 
-_NO_SERVICE_NETWORKS = {"GitHub": [], "AWS": [], "GCP": [], "VPN": []}
+_NO_SERVICE_NETWORKS = {"GitHub": [], "AWS": [], "GCP": [], "Azure": [], "VPN": []}
 
 
 def _write_by_region_summary(summary_file_path: pathlib.Path, regions: list[str]) -> None:

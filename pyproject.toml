@@ -15,7 +15,7 @@ allow-direct-references = true
 
 [project]
 name = "dandi-s3-log-extraction"
-version="1.5.0"
+version="1.6.0"
 authors = [
   { name="Cody Baker", email="cody.c.baker.phd@gmail.com" },
 ]
@@ -45,7 +45,7 @@ dependencies = [
     "psutil",
     "cryptography",
     "dandi",
-    "s3_log_extraction>=1.11.2",
+    "s3_log_extraction @ git+https://github.com/dandi/s3-log-extraction.git@68691f8923da54215ad9e77e78aadd8f1965005d",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
