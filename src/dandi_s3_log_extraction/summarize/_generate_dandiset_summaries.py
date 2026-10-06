@@ -18,9 +18,10 @@ DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
     "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
     "derivatives/derivatives/content_id_to_usage_dandiset_path.jsonl"
 )
-ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Video", "Miscellaneous")
+ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Neuroimaging", "Video", "Miscellaneous")
 NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
-MICROSCOPY_SUFFIXES = {".nii", ".ome", ".tiff", ".tif", ".bvecs", ".bvals", ".trk"}
+MICROSCOPY_SUFFIXES = {".ome", ".tiff", ".tif"}
+NEUROIMAGING_SUFFIXES = {".nii", ".bvec", ".bvecs", ".bval", ".bvals", ".trk"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".wmv", ".avi", ".mkv"}
 
 # Taken from the upstream package so that the DANDI summaries are published under the same privacy policy
@@ -577,6 +578,9 @@ def _get_asset_type(*, asset_path: str) -> str:
 
     if suffix_set.intersection(MICROSCOPY_SUFFIXES) or (".zarr" in suffix_set and len(suffixes) == 1):
         return "Microscopy"
+
+    if suffix_set.intersection(NEUROIMAGING_SUFFIXES):
+        return "Neuroimaging"
 
     if suffix_set.intersection(VIDEO_SUFFIXES):
         return "Video"
