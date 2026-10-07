@@ -1,4 +1,5 @@
 import collections
+import collections.abc
 import concurrent.futures
 import datetime
 import itertools
@@ -41,6 +42,7 @@ def generate_dandiset_summaries(
     unassociated: bool = False,
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
     region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
+    excluded_ips: collections.abc.Iterable[str] | None = None,
 ) -> None:
     """
     Generate top-level summaries of access activity for all Dandisets.
@@ -49,6 +51,10 @@ def generate_dandiset_summaries(
     checked against the published ranges of known cloud services and VPNs, and otherwise looked up in the local
     GeoLite2-City database. No requester's location is written to disk; only the aggregated by-region summaries
     are.
+
+    Requesters in the published GitHub ranges make no views and are not counted as requesters, since their
+    streaming is automated, but their requests still count toward bytes sent, requests, and downloads. Requesters
+    of other cloud services and VPNs count everywhere. Addresses in `excluded_ips` leave every summary.
 
     Every summary is written with its true values, except for `by_region.tsv`. That one pairs activity with
     requester location, so it is written only when the update it carries moves more than
@@ -89,6 +95,11 @@ def generate_dandiset_summaries(
     region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
         Resolves each IP address to its region/service label. Defaults to an upstream `IpRegionResolver` over
         the GeoLite2 database in the cache directory.
+    excluded_ips : iterable of str, optional
+        Individual addresses left out of every summary, including bytes sent, requests, downloads, views, and
+        the requester counts. Defaults to the addresses listed in the upstream `EXCLUDED_IPS_FILE_PATH`
+        (`~/.s3-log-extraction/excluded_ips.txt`), which is none when that file is absent. Pass an empty
+        iterable to exclude no address regardless of that file.
     """
     cache_directory = (
         pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
@@ -106,6 +117,10 @@ def generate_dandiset_summaries(
         content_id_to_usage_dandiset_path_url or DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL
     )
 
+    excluded_ip_set = (
+        frozenset(excluded_ips) if excluded_ips is not None else s3_log_extraction.config.get_excluded_ips()
+    )
+
     owns_resolver = region_resolver is None
     if owns_resolver:
         region_resolver = s3_log_extraction.ip_utils.IpRegionResolver(cache_directory=cache_directory)
@@ -121,6 +136,7 @@ def generate_dandiset_summaries(
             unassociated=unassociated,
             region_disclosure_threshold=region_disclosure_threshold,
             region_resolver=region_resolver,
+            excluded_ips=excluded_ip_set,
         )
     finally:
         if owns_resolver:
@@ -139,6 +155,7 @@ def _generate_dandiset_summaries(
     unassociated: bool,
     region_disclosure_threshold: int,
     region_resolver: s3_log_extraction.ip_utils.RegionResolver,
+    excluded_ips: frozenset[str],
 ) -> None:
     import dandi.dandiapi
 
@@ -157,6 +174,7 @@ def _generate_dandiset_summaries(
             region_resolver=region_resolver,
             blob_id_to_asset_path=content_id_to_dandiset_path,
             region_disclosure_threshold=region_disclosure_threshold,
+            excluded_ips=excluded_ips,
         )
     else:
         dandiset_id_to_local_content_directories, content_id_to_dandiset_path = _get_determinable_dandi_asset_info(
@@ -197,6 +215,7 @@ def _generate_dandiset_summaries(
                     region_resolver=region_resolver,
                     blob_id_to_asset_path=content_id_to_dandiset_path,
                     region_disclosure_threshold=region_disclosure_threshold,
+                    excluded_ips=excluded_ips,
                 )
         else:
             # The resolver is pickled into each task with the service ranges it has fetched; every worker process
@@ -211,6 +230,7 @@ def _generate_dandiset_summaries(
                         region_resolver=region_resolver,
                         blob_id_to_asset_path=content_id_to_dandiset_path,
                         region_disclosure_threshold=region_disclosure_threshold,
+                        excluded_ips=excluded_ips,
                     )
                     for dandiset_id in dandiset_ids_to_summarize
                 ]
@@ -242,6 +262,7 @@ def _generate_dandiset_summaries(
         blob_directories=all_blob_directories,
         summary_file_path=summary_directory / "archive" / "requester_count.tsv",
         region_resolver=region_resolver,
+        excluded_ips=excluded_ips,
     )
 
 
@@ -381,24 +402,56 @@ def _get_undetermined_dandi_asset_info(
 
 
 def _collect_views_by_blob_directory(
-    blob_directories: list[pathlib.Path], /
+    *,
+    blob_directories: list[pathlib.Path],
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver,
+    excluded_ips: frozenset[str],
 ) -> dict[pathlib.Path, list[tuple[str, str]]]:
     """
     Sessionize every blob of a Dandiset once, so that all summaries of it can share the result.
 
     Delegates to the upstream sessionization so that a view means exactly the same thing in the DANDI
     summaries as it does in the generic ones they are aggregated with. Each view is returned as the
-    `(date, ip)` pair of the request that began it.
+    `(date, ip)` pair of the request that began it. Requesters labeled `GitHub` and the addresses in
+    `excluded_ips` make no views, as upstream.
 
     Blob directories that do not exist were never accessed and so have no views.
     """
-    return {
+    views_by_blob_directory = {
         blob_directory: s3_log_extraction.summarize._generate_summaries._collect_asset_views(
-            asset_directory=blob_directory, use_encryption=False
+            asset_directory=blob_directory,
+            use_encryption=False,
+            excluded_ips=excluded_ips,
+            region_resolver=region_resolver,
         )
         for blob_directory in blob_directories
         if blob_directory.exists()
     }
+    return views_by_blob_directory
+
+
+def _collect_included_by_blob_directory(
+    *, blob_directories: list[pathlib.Path], excluded_ips: frozenset[str]
+) -> dict[pathlib.Path, list[bool]]:
+    """
+    Mark, per request of every blob, whether it was made by an address that is not excluded.
+
+    Excluded addresses leave every summary, so the requests they made are masked out of each one. Without
+    any excluded address no mask is built, which spares reading every `ips.txt` once more. A blob with no
+    entry keeps all of its requests.
+    """
+    if not excluded_ips:
+        return {}
+
+    included_by_blob_directory = {
+        blob_directory: [
+            not s3_log_extraction.ip_utils.is_excluded_ip(ip=ip.strip(), excluded_ips=excluded_ips)
+            for ip in (blob_directory / "ips.txt").read_text().splitlines()
+        ]
+        for blob_directory in blob_directories
+        if blob_directory.exists()
+    }
+    return included_by_blob_directory
 
 
 def _summarize_dandiset(
@@ -409,41 +462,53 @@ def _summarize_dandiset(
     region_resolver: s3_log_extraction.ip_utils.RegionResolver,
     blob_id_to_asset_path: dict[str, str],
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
+    excluded_ips: frozenset[str] = frozenset(),
 ) -> None:
-    views_by_blob_directory = _collect_views_by_blob_directory(blob_directories)
+    views_by_blob_directory = _collect_views_by_blob_directory(
+        blob_directories=blob_directories, region_resolver=region_resolver, excluded_ips=excluded_ips
+    )
+    included_by_blob_directory = _collect_included_by_blob_directory(
+        blob_directories=blob_directories, excluded_ips=excluded_ips
+    )
 
     _summarize_dandiset_by_day(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_day.tsv",
         views_by_blob_directory=views_by_blob_directory,
+        included_by_blob_directory=included_by_blob_directory,
     )
     _summarize_dandiset_by_asset(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
         views_by_blob_directory=views_by_blob_directory,
+        included_by_blob_directory=included_by_blob_directory,
     )
     _summarize_dandiset_by_asset_per_week(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset_per_week.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
+        included_by_blob_directory=included_by_blob_directory,
     )
     _summarize_dandiset_by_asset_type_per_week(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_asset_type_per_week.tsv",
         blob_id_to_asset_path=blob_id_to_asset_path,
+        included_by_blob_directory=included_by_blob_directory,
     )
     _summarize_dandiset_by_region(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "by_region.tsv",
         region_resolver=region_resolver,
         views_by_blob_directory=views_by_blob_directory,
+        included_by_blob_directory=included_by_blob_directory,
         region_disclosure_threshold=region_disclosure_threshold,
     )
     _summarize_dandiset_unique_requester_count(
         blob_directories=blob_directories,
         summary_file_path=summary_directory / dandiset_id / "requester_count.tsv",
         region_resolver=region_resolver,
+        excluded_ips=excluded_ips,
     )
 
 
@@ -452,6 +517,7 @@ def _summarize_dandiset_by_day(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
+    included_by_blob_directory: dict[pathlib.Path, list[bool]],
 ) -> None:
     all_dates = []
     all_bytes_sent = []
@@ -468,20 +534,28 @@ def _summarize_dandiset_by_day(
         for view_date, _ in views_by_blob_directory.get(blob_directory, []):
             number_of_views_by_day[view_date] += 1
 
+        included = included_by_blob_directory.get(blob_directory)
+
         timestamps_file_path = blob_directory / "timestamps.txt"
         dates = [
             _timestamp_to_date_format(timestamp=timestamp)
             for timestamp in timestamps_file_path.read_text().splitlines()
         ]
-        all_dates.extend(dates)
+        all_dates.extend(
+            s3_log_extraction.summarize._generate_summaries._select_included(values=dates, included=included)
+        )
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
-        all_bytes_sent.extend(bytes_sent)
+        all_bytes_sent.extend(
+            s3_log_extraction.summarize._generate_summaries._select_included(values=bytes_sent, included=included)
+        )
 
         download_file_path = blob_directory / "download.txt"
         downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
-        all_downloads.extend(downloads)
+        all_downloads.extend(
+            s3_log_extraction.summarize._generate_summaries._select_included(values=downloads, included=included)
+        )
 
     summarized_activity_by_day = collections.defaultdict(int)
     number_of_requests_by_day = collections.defaultdict(int)
@@ -522,7 +596,11 @@ def _timestamp_to_week_start_date(*, timestamp: str) -> str:
 
 
 def _summarize_dandiset_by_asset_per_week(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    blob_id_to_asset_path: dict[str, str],
+    included_by_blob_directory: dict[pathlib.Path, list[bool]],
 ) -> None:
     summarized_activity_by_asset_per_week: dict[str, dict[str, int]] = collections.defaultdict(
         lambda: collections.defaultdict(int)
@@ -538,14 +616,21 @@ def _summarize_dandiset_by_asset_per_week(
 
         asset_path = blob_id_to_asset_path.get(blob_id, "undetermined")
 
+        included = included_by_blob_directory.get(blob_directory)
+
         timestamps_file_path = blob_directory / "timestamps.txt"
-        week_starts = [
-            _timestamp_to_week_start_date(timestamp=timestamp)
-            for timestamp in timestamps_file_path.read_text().splitlines()
-        ]
+        week_starts = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[
+                _timestamp_to_week_start_date(timestamp=timestamp)
+                for timestamp in timestamps_file_path.read_text().splitlines()
+            ],
+            included=included,
+        )
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
-        bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+        bytes_sent = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()], included=included
+        )
 
         for week_start, bs in zip(week_starts, bytes_sent):
             summarized_activity_by_asset_per_week[week_start][asset_path] += bs
@@ -595,7 +680,11 @@ def _sort_asset_type_columns(*, column_names: list[str]) -> list[str]:
 
 
 def _summarize_dandiset_by_asset_type_per_week(
-    *, blob_directories: list[pathlib.Path], summary_file_path: pathlib.Path, blob_id_to_asset_path: dict[str, str]
+    *,
+    blob_directories: list[pathlib.Path],
+    summary_file_path: pathlib.Path,
+    blob_id_to_asset_path: dict[str, str],
+    included_by_blob_directory: dict[pathlib.Path, list[bool]],
 ) -> None:
     summarized_activity_by_asset_type_per_week: dict[str, dict[str, int]] = collections.defaultdict(
         lambda: collections.defaultdict(int)
@@ -613,14 +702,21 @@ def _summarize_dandiset_by_asset_type_per_week(
         asset_type = _get_asset_type(asset_path=asset_path)
         all_asset_types.add(asset_type)
 
+        included = included_by_blob_directory.get(blob_directory)
+
         timestamps_file_path = blob_directory / "timestamps.txt"
-        week_starts = [
-            _timestamp_to_week_start_date(timestamp=timestamp)
-            for timestamp in timestamps_file_path.read_text().splitlines()
-        ]
+        week_starts = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[
+                _timestamp_to_week_start_date(timestamp=timestamp)
+                for timestamp in timestamps_file_path.read_text().splitlines()
+            ],
+            included=included,
+        )
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
-        bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+        bytes_sent = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()], included=included
+        )
 
         for week_start, bytes_sent_value in zip(week_starts, bytes_sent):
             summarized_activity_by_asset_type_per_week[week_start][asset_type] += bytes_sent_value
@@ -681,6 +777,7 @@ def _summarize_dandiset_by_asset(
     summary_file_path: pathlib.Path,
     blob_id_to_asset_path: dict[str, str],
     views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
+    included_by_blob_directory: dict[pathlib.Path, list[bool]],
 ) -> None:
     summarized_activity_by_asset = collections.defaultdict(int)
     number_of_requests_by_asset = collections.defaultdict(int)
@@ -697,10 +794,16 @@ def _summarize_dandiset_by_asset(
         # (the blob ID would not be in the asset path mapping in that case)
         asset_path = blob_id_to_asset_path.get(blob_id, "undetermined")
 
+        included = included_by_blob_directory.get(blob_directory)
+
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
-        bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
+        bytes_sent = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()], included=included
+        )
         download_file_path = blob_directory / "download.txt"
-        downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
+        downloads = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[int(value.strip()) for value in download_file_path.read_text().splitlines()], included=included
+        )
 
         summarized_activity_by_asset[asset_path] += sum(bytes_sent)
         number_of_requests_by_asset[asset_path] += len(bytes_sent)
@@ -730,6 +833,7 @@ def _summarize_dandiset_by_region(
     summary_file_path: pathlib.Path,
     region_resolver: s3_log_extraction.ip_utils.RegionResolver,
     views_by_blob_directory: dict[pathlib.Path, list[tuple[str, str]]],
+    included_by_blob_directory: dict[pathlib.Path, list[bool]],
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
 ) -> None:
     all_regions = []
@@ -747,18 +851,26 @@ def _summarize_dandiset_by_region(
         for _, view_ip in views_by_blob_directory.get(blob_directory, []):
             number_of_views_by_region[region_resolver.resolve(view_ip)] += 1
 
+        included = included_by_blob_directory.get(blob_directory)
+
         ips_file_path = blob_directory / "ips.txt"
-        ips = [ip.strip() for ip in ips_file_path.read_text().splitlines()]
+        ips = s3_log_extraction.summarize._generate_summaries._select_included(
+            values=[ip.strip() for ip in ips_file_path.read_text().splitlines()], included=included
+        )
         regions = [region_resolver.resolve(ip) for ip in ips]
         all_regions.extend(regions)
 
         bytes_sent_file_path = blob_directory / "bytes_sent.txt"
         bytes_sent = [int(value.strip()) for value in bytes_sent_file_path.read_text().splitlines()]
-        all_bytes_sent.extend(bytes_sent)
+        all_bytes_sent.extend(
+            s3_log_extraction.summarize._generate_summaries._select_included(values=bytes_sent, included=included)
+        )
 
         download_file_path = blob_directory / "download.txt"
         downloads = [int(value.strip()) for value in download_file_path.read_text().splitlines()]
-        all_downloads.extend(downloads)
+        all_downloads.extend(
+            s3_log_extraction.summarize._generate_summaries._select_included(values=downloads, included=included)
+        )
 
     summarized_activity_by_region = collections.defaultdict(int)
     number_of_requests_by_region = collections.defaultdict(int)
@@ -818,17 +930,26 @@ def _collect_unique_ips(blob_directories: list[pathlib.Path]) -> set[str]:
     return unique_ips
 
 
-def _exclude_cloud_service_ips(
-    unique_ips: set[str], region_resolver: s3_log_extraction.ip_utils.RegionResolver | None
+def _exclude_non_requester_ips(
+    *,
+    unique_ips: set[str],
+    region_resolver: s3_log_extraction.ip_utils.RegionResolver | None,
+    excluded_ips: frozenset[str],
 ) -> set[str]:
-    """Drop the IPs the resolver attributes to a known cloud/hosting/VPN service; keep all of them without one."""
-    if region_resolver is None:
-        return unique_ips
-    return {
+    """
+    Drop the IPs that do not count as requesters, on the same terms as the upstream requester counts.
+
+    These are the addresses in `excluded_ips` and, when a resolver is given, the IPs it labels `GitHub`, whose
+    traffic comes from automated runners. Requesters on other cloud services (AWS, GCP, Azure) and VPNs carry
+    real sessions and are kept.
+    """
+    requester_ips = {
         ip
         for ip in unique_ips
-        if not s3_log_extraction.ip_utils.is_cloud_service_or_vpn_label(region_resolver.resolve(ip))
+        if not s3_log_extraction.ip_utils.is_excluded_ip(ip=ip, excluded_ips=excluded_ips)
+        and (region_resolver is None or region_resolver.resolve(ip) != "GitHub")
     }
+    return requester_ips
 
 
 def _summarize_dandiset_unique_requester_count(
@@ -836,13 +957,14 @@ def _summarize_dandiset_unique_requester_count(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
+    excluded_ips: frozenset[str] = frozenset(),
 ) -> None:
     """
     Compute and save the unique requester count for a Dandiset.
 
     Reads all ``ips.txt`` files from the given blob directories, counts the
-    number of unique IPs across the entire Dandiset (excluding IPs attributed to
-    known cloud/hosting/VPN services), and writes the value to ``summary_file_path``.
+    number of unique IPs across the entire Dandiset (excluding IPs labeled ``GitHub`` and any of
+    ``excluded_ips``), and writes the value to ``summary_file_path``.
 
     The count is not paired with any location, so it cannot single out a requester and is written with
     its true value on every update.
@@ -855,10 +977,14 @@ def _summarize_dandiset_unique_requester_count(
         Destination file where the count (as a string) will be written.
     region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
         Resolves each IP address to its region (or cloud service) label, used to
-        exclude cloud/hosting/VPN service IPs from the requester count.
+        exclude GitHub IPs from the requester count.
+    excluded_ips : frozenset of str, optional
+        Individual addresses left out of the requester count. Defaults to an empty set, which excludes nothing.
     """
-    unique_ips = _exclude_cloud_service_ips(
-        _collect_unique_ips(blob_directories=blob_directories), region_resolver=region_resolver
+    unique_ips = _exclude_non_requester_ips(
+        unique_ips=_collect_unique_ips(blob_directories=blob_directories),
+        region_resolver=region_resolver,
+        excluded_ips=excluded_ips,
     )
 
     if not unique_ips:
@@ -873,13 +999,14 @@ def _summarize_archive_unique_requester_count(
     blob_directories: list[pathlib.Path],
     summary_file_path: pathlib.Path,
     region_resolver: s3_log_extraction.ip_utils.RegionResolver | None = None,
+    excluded_ips: frozenset[str] = frozenset(),
 ) -> None:
     """
     Compute and save the unique requester count for the archive.
 
     Collects unique IPs across all provided blob directories (a true union
-    across all Dandisets), excludes IPs attributed to known cloud/hosting/VPN
-    services, and writes the value to ``summary_file_path``.
+    across all Dandisets), excludes IPs labeled ``GitHub`` and any of ``excluded_ips``,
+    and writes the value to ``summary_file_path``.
 
     The count is not paired with any location, so it cannot single out a requester and is written with
     its true value on every update.
@@ -892,10 +1019,14 @@ def _summarize_archive_unique_requester_count(
         Destination file where the count will be written.
     region_resolver : s3_log_extraction.ip_utils.RegionResolver, optional
         Resolves each IP address to its region (or cloud service) label, used to
-        exclude cloud/hosting/VPN service IPs from the requester count.
+        exclude GitHub IPs from the requester count.
+    excluded_ips : frozenset of str, optional
+        Individual addresses left out of the requester count. Defaults to an empty set, which excludes nothing.
     """
-    unique_ips = _exclude_cloud_service_ips(
-        _collect_unique_ips(blob_directories=blob_directories), region_resolver=region_resolver
+    unique_ips = _exclude_non_requester_ips(
+        unique_ips=_collect_unique_ips(blob_directories=blob_directories),
+        region_resolver=region_resolver,
+        excluded_ips=excluded_ips,
     )
 
     if not unique_ips:
