@@ -1,5 +1,6 @@
 """Tests for dandi_s3_log_extraction covering remaining uncovered code paths."""
 
+import gzip
 import json
 import os
 import pathlib
@@ -89,12 +90,14 @@ def test_generate_dandiset_summaries_pick_and_skip_raises(tmp_path: pathlib.Path
 
 
 def _make_fake_jsonl_response(content_map: dict, status_code: int = 200) -> MagicMock:
-    """Build a mock requests response with a JSON Lines body."""
+    """Build a mock requests response with a gzip-compressed JSON Lines body, as published on the `dist` branch."""
     mock_response = MagicMock()
     mock_response.status_code = status_code
-    mock_response.text = "\n".join(
-        json.dumps({content_id: usage_dandiset_id_to_path})
-        for content_id, usage_dandiset_id_to_path in content_map.items()
+    mock_response.content = gzip.compress(
+        data="\n".join(
+            json.dumps({content_id: usage_dandiset_id_to_path})
+            for content_id, usage_dandiset_id_to_path in content_map.items()
+        ).encode("utf-8")
     )
     return mock_response
 

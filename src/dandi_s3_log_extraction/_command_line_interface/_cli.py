@@ -184,7 +184,7 @@ def _update_cli() -> None:
 @rich_click.option(
     "--content-id-to-usage-dandiset-path-url",
     help=(
-        "URL or local file path of the JSON Lines cache mapping content IDs to Dandiset paths. "
+        "URL or local file path of the JSON Lines cache mapping content IDs to Dandiset paths, gzip-compressed or not. "
         "Defaults to the pre-generated mapping stored in the `dandi-cache` GitHub repository. "
         "Point this to a local copy of the file to avoid fetching it from the network."
     ),
