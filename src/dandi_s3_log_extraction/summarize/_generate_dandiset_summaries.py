@@ -2,6 +2,7 @@ import collections
 import collections.abc
 import concurrent.futures
 import datetime
+import gzip
 import itertools
 import json
 import pathlib
@@ -17,8 +18,9 @@ from .._parallel._utils import _handle_max_workers
 
 DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
     "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
-    "derivatives/derivatives/content_id_to_usage_dandiset_path.jsonl"
+    "refs/heads/dist/derivatives/content_id_to_usage_dandiset_path.jsonl.gz"
 )
+GZIP_MAGIC_NUMBER = b"\x1f\x8b"
 ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Neuroimaging", "Video", "Miscellaneous")
 NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".ome", ".tiff", ".tif"}
@@ -274,11 +276,13 @@ def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[st
     ``{"<content_id>": {"<dandiset_id>": "<asset_path>"}}``.
     The parsed lines are merged into a single dictionary matching the structure
     of the previous gzipped JSON mapping.
+    The cache may be gzip-compressed, as published on the `dist` branch, or plain text.
+    Compression is detected from the content rather than the file name.
 
     Parameters
     ----------
     source : str
-        Either an HTTP(S) URL or a path to a local copy of the JSON Lines file.
+        Either an HTTP(S) URL or a path to a local copy of the JSON Lines file, compressed or not.
 
     Returns
     -------
@@ -293,13 +297,17 @@ def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[st
                 f"status code {response.status_code}: {response.text}"
             )
             raise RuntimeError(message)
-        lines = response.text.splitlines()
+        content = response.content
     else:
         local_file_path = pathlib.Path(source)
         if not local_file_path.exists():
             message = f"Failed to load content ID to usage path mapping - no such file {local_file_path}."
             raise FileNotFoundError(message)
-        lines = local_file_path.read_text().splitlines()
+        content = local_file_path.read_bytes()
+
+    if content.startswith(GZIP_MAGIC_NUMBER):
+        content = gzip.decompress(data=content)
+    lines = content.decode("utf-8").splitlines()
 
     content_id_to_usage_dandiset_path: dict[str, dict[str, str]] = dict()
     for line_index, line in enumerate(lines):

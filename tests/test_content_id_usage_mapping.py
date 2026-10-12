@@ -1,5 +1,6 @@
 """Tests for the JSON Lines content ID to usage Dandiset path cache used during summary generation."""
 
+import gzip
 import json
 import pathlib
 
@@ -41,8 +42,9 @@ def _write_content_extraction(
 
 
 @pytest.mark.ai_generated
-def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path) -> None:
-    """A local JSON Lines cache file maps blob and zarr content IDs to their asset paths."""
+@pytest.mark.parametrize("is_compressed", [False, True], ids=["plain", "gzip"])
+def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path, is_compressed: bool) -> None:
+    """A local JSON Lines cache file, plain or gzip-compressed, maps blob and zarr content IDs to their asset paths."""
     extraction_directory = _initialize_cache(tmp_path)
 
     blob_id = "0a1b2c3d-1111-2222-3333-444455556666"
@@ -56,7 +58,12 @@ def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path) -> None:
         "",  # Blank lines are ignored
         json.dumps({zarr_id: {"000001": "sub-B/sub-B.ome.zarr"}}),
     ]
-    mapping_file_path.write_text("\n".join(mapping_lines) + "\n")
+    mapping_content = ("\n".join(mapping_lines) + "\n").encode("utf-8")
+    if is_compressed:
+        # The `dist` branch publishes the cache with a `.jsonl.gz` name, but detection relies on the content alone
+        mapping_file_path = mapping_file_path.with_name(f"{mapping_file_path.name}.gz")
+        mapping_content = gzip.compress(data=mapping_content)
+    mapping_file_path.write_bytes(mapping_content)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
