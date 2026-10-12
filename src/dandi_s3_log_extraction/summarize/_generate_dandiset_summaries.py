@@ -2,25 +2,24 @@ import collections
 import collections.abc
 import concurrent.futures
 import datetime
-import gzip
 import itertools
 import json
 import pathlib
 import warnings
 
 import pandas
-import requests
 import s3_log_extraction
 import tqdm
+import zarr
+import zarr.errors
 from beartype import beartype
 
 from .._parallel._utils import _handle_max_workers
 
 DEFAULT_CONTENT_ID_TO_USAGE_DANDISET_PATH_URL = (
     "https://raw.githubusercontent.com/dandi-cache/content-id-to-usage-dandiset-path/"
-    "refs/heads/dist/derivatives/content_id_to_usage_dandiset_path.jsonl.gz"
+    "refs/heads/derivatives/derivatives/content_id_to_usage_dandiset_path.zarr"
 )
-GZIP_MAGIC_NUMBER = b"\x1f\x8b"
 ASSET_TYPES_IN_ORDER = ("Neurophysiology", "Microscopy", "Neuroimaging", "Video", "Miscellaneous")
 NEUROPHYSIOLOGY_SUFFIXES = {".nwb"}
 MICROSCOPY_SUFFIXES = {".ome", ".tiff", ".tif"}
@@ -270,44 +269,35 @@ def _generate_dandiset_summaries(
 
 def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[str, str]]:
     """
-    Load the JSON Lines cache mapping content IDs to their usage Dandiset paths.
+    Load the Zarr cache mapping content IDs to their usage Dandiset paths.
 
-    Each line of the cache is a JSON object of the form
-    ``{"<content_id>": {"<dandiset_id>": "<asset_path>"}}``.
-    The parsed lines are merged into a single dictionary matching the structure
-    of the previous gzipped JSON mapping.
-    The cache may be gzip-compressed, as published on the `dist` branch, or plain text.
-    Compression is detected from the content rather than the file name.
+    The `stream` array of the Zarr store holds JSON Lines text as bytes.
+    Its chunks each end on a whole record and are padded with newlines, so the concatenated text reads as JSON Lines
+    once blank lines are skipped.
+    Each line is a JSON object of the form ``{"<content_id>": {"<dandiset_id>": "<asset_path>"}}``.
+    The cache is appended to over time, so where a content ID appears on more than one line, the last line is current.
 
     Parameters
     ----------
     source : str
-        Either an HTTP(S) URL or a path to a local copy of the JSON Lines file, compressed or not.
+        Either an HTTP(S) URL or a path to a local copy of the Zarr store.
 
     Returns
     -------
     dict
         Mapping of each content ID to its Dandiset IDs and asset paths.
     """
-    if source.startswith("http://") or source.startswith("https://"):
-        response = requests.get(source)
-        if response.status_code != 200:
-            message = (
-                f"Failed to retrieve content ID to usage path mapping from {source} - "
-                f"status code {response.status_code}: {response.text}"
-            )
-            raise RuntimeError(message)
-        content = response.content
-    else:
-        local_file_path = pathlib.Path(source)
-        if not local_file_path.exists():
-            message = f"Failed to load content ID to usage path mapping - no such file {local_file_path}."
-            raise FileNotFoundError(message)
-        content = local_file_path.read_bytes()
+    is_remote = source.startswith("http://") or source.startswith("https://")
+    if not is_remote and not pathlib.Path(source).exists():
+        message = f"Failed to load content ID to usage path mapping - no such file {source}."
+        raise FileNotFoundError(message)
 
-    if content.startswith(GZIP_MAGIC_NUMBER):
-        content = gzip.decompress(data=content)
-    lines = content.decode("utf-8").splitlines()
+    try:
+        stream = zarr.open_array(store=source, path="stream", mode="r")
+    except zarr.errors.NodeNotFoundError as exception:
+        message = f"Failed to retrieve content ID to usage path mapping from {source} - no `stream` array was found."
+        raise RuntimeError(message) from exception
+    lines = stream[:].tobytes().decode("utf-8").splitlines()
 
     content_id_to_usage_dandiset_path: dict[str, dict[str, str]] = dict()
     for line_index, line in enumerate(lines):
@@ -326,7 +316,7 @@ def _load_content_id_to_usage_dandiset_path(source: str, /) -> dict[str, dict[st
             continue
 
         for content_id, usage_dandiset_id_to_path in entry.items():
-            content_id_to_usage_dandiset_path.setdefault(content_id, dict()).update(usage_dandiset_id_to_path)
+            content_id_to_usage_dandiset_path[content_id] = usage_dandiset_id_to_path
 
     return content_id_to_usage_dandiset_path
 

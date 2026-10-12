@@ -1,15 +1,16 @@
 """Tests for dandi_s3_log_extraction covering remaining uncovered code paths."""
 
-import gzip
 import json
 import os
 import pathlib
 import warnings
 from unittest.mock import MagicMock, patch
 
+import numpy
 import pandas
 import pytest
 import s3_log_extraction.config
+import zarr.errors
 from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction
@@ -89,30 +90,22 @@ def test_generate_dandiset_summaries_pick_and_skip_raises(tmp_path: pathlib.Path
         )
 
 
-def _make_fake_jsonl_response(content_map: dict, status_code: int = 200) -> MagicMock:
-    """Build a mock requests response with a gzip-compressed JSON Lines body, as published on the `dist` branch."""
-    mock_response = MagicMock()
-    mock_response.status_code = status_code
-    mock_response.content = gzip.compress(
-        data="\n".join(
-            json.dumps({content_id: usage_dandiset_id_to_path})
-            for content_id, usage_dandiset_id_to_path in content_map.items()
-        ).encode("utf-8")
+def _make_fake_stream(content_map: dict) -> numpy.ndarray:
+    """Build the bytes of a Zarr cache `stream` array, which hold JSON Lines text."""
+    content = "\n".join(
+        json.dumps({content_id: usage_dandiset_id_to_path})
+        for content_id, usage_dandiset_id_to_path in content_map.items()
     )
-    return mock_response
+    return numpy.frombuffer(buffer=content.encode("utf-8"), dtype="uint8")
 
 
 @pytest.mark.ai_generated
 def test_generate_dandiset_summaries_http_error_determinable(tmp_path: pathlib.Path) -> None:
-    """generate_dandiset_summaries raises RuntimeError when content URL returns non-200 status."""
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    mock_response.text = "not found"
-
+    """generate_dandiset_summaries raises RuntimeError when the remote Zarr cache has no `stream` array."""
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=mock_response,
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            side_effect=zarr.errors.ArrayNotFoundError("No array found"),
         ),
         pytest.raises(RuntimeError),
     ):
@@ -124,15 +117,11 @@ def test_generate_dandiset_summaries_http_error_determinable(tmp_path: pathlib.P
 
 @pytest.mark.ai_generated
 def test_generate_dandiset_summaries_http_error_undetermined(tmp_path: pathlib.Path) -> None:
-    """generate_dandiset_summaries raises RuntimeError for unassociated when URL returns non-200."""
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    mock_response.text = "server error"
-
+    """generate_dandiset_summaries raises RuntimeError for unassociated when the remote Zarr cache is missing."""
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=mock_response,
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            side_effect=zarr.errors.ArrayNotFoundError("No array found"),
         ),
         pytest.raises(RuntimeError),
     ):
@@ -148,8 +137,8 @@ def test_generate_dandiset_summaries_pick_branch(tmp_path: pathlib.Path) -> None
     """generate_dandiset_summaries uses pick list when pick is set (skip is None)."""
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=_make_fake_jsonl_response({}),
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            return_value=_make_fake_stream({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient") as mock_client_cls,
         patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"),
@@ -177,8 +166,8 @@ def test_generate_dandiset_summaries_skip_branch(tmp_path: pathlib.Path) -> None
 
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=_make_fake_jsonl_response({}),
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            return_value=_make_fake_stream({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient", return_value=mock_client),
         patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset"),
@@ -201,8 +190,8 @@ def test_generate_dandiset_summaries_parallel_branch(tmp_path: pathlib.Path) -> 
 
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=_make_fake_jsonl_response({}),
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            return_value=_make_fake_stream({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient", return_value=mock_client),
         patch(
@@ -774,8 +763,8 @@ def test_generate_dandiset_summaries_excluded_ips_source(
 
     with (
         patch(
-            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.requests.get",
-            return_value=_make_fake_jsonl_response({}),
+            "dandi_s3_log_extraction.summarize._generate_dandiset_summaries.zarr.open_array",
+            return_value=_make_fake_stream({}),
         ),
         patch("dandi.dandiapi.DandiAPIClient"),
         patch("dandi_s3_log_extraction.summarize._generate_dandiset_summaries._summarize_dandiset") as mock_summarize,

@@ -1,11 +1,12 @@
-"""Tests for the JSON Lines content ID to usage Dandiset path cache used during summary generation."""
+"""Tests for the Zarr content ID to usage Dandiset path cache used during summary generation."""
 
-import gzip
 import json
 import pathlib
 
+import numpy
 import pandas
 import pytest
+import zarr
 from s3_log_extraction.ip_utils import MappingRegionResolver
 
 import dandi_s3_log_extraction.summarize
@@ -20,6 +21,15 @@ def _initialize_cache(cache_directory: pathlib.Path, /) -> pathlib.Path:
     extraction_directory = cache_directory / "extraction"
     extraction_directory.mkdir()
     return extraction_directory
+
+
+def _write_mapping_store(*, store_path: pathlib.Path, lines: list[str]) -> None:
+    """Write JSON Lines text into the `stream` array of a Zarr store, laid out like the published cache."""
+    content = numpy.frombuffer(buffer=("\n".join(lines) + "\n").encode("utf-8"), dtype="uint8")
+    group = zarr.open_group(store=store_path, mode="w")
+    # Small chunks so that the records straddle chunk boundaries, with the newline fill value used upstream
+    stream = group.create_array(name="stream", shape=content.shape, chunks=(32,), dtype="uint8", fill_value=10)
+    stream[:] = content
 
 
 def _write_content_extraction(
@@ -42,9 +52,8 @@ def _write_content_extraction(
 
 
 @pytest.mark.ai_generated
-@pytest.mark.parametrize("is_compressed", [False, True], ids=["plain", "gzip"])
-def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path, is_compressed: bool) -> None:
-    """A local JSON Lines cache file, plain or gzip-compressed, maps blob and zarr content IDs to their asset paths."""
+def test_summaries_from_local_zarr_cache(tmp_path: pathlib.Path) -> None:
+    """A local Zarr cache maps blob and zarr content IDs to their asset paths."""
     extraction_directory = _initialize_cache(tmp_path)
 
     blob_id = "0a1b2c3d-1111-2222-3333-444455556666"
@@ -52,18 +61,13 @@ def test_summaries_from_local_jsonl_cache(tmp_path: pathlib.Path, is_compressed:
     _write_content_extraction(extraction_directory=extraction_directory, content_id=blob_id)
     _write_content_extraction(extraction_directory=extraction_directory, content_id=zarr_id, is_zarr=True)
 
-    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.jsonl"
+    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.zarr"
     mapping_lines = [
         json.dumps({blob_id: {"000001": "sub-A/sub-A.nwb"}}),
         "",  # Blank lines are ignored
         json.dumps({zarr_id: {"000001": "sub-B/sub-B.ome.zarr"}}),
     ]
-    mapping_content = ("\n".join(mapping_lines) + "\n").encode("utf-8")
-    if is_compressed:
-        # The `dist` branch publishes the cache with a `.jsonl.gz` name, but detection relies on the content alone
-        mapping_file_path = mapping_file_path.with_name(f"{mapping_file_path.name}.gz")
-        mapping_content = gzip.compress(data=mapping_content)
-    mapping_file_path.write_bytes(mapping_content)
+    _write_mapping_store(store_path=mapping_file_path, lines=mapping_lines)
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
@@ -86,9 +90,10 @@ def test_content_id_with_multiple_usage_paths(tmp_path: pathlib.Path) -> None:
     shared_id = "5a6b7c8d-1234-5678-9abc-def012345678"
     _write_content_extraction(extraction_directory=extraction_directory, content_id=shared_id)
 
-    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.jsonl"
-    mapping_file_path.write_text(
-        json.dumps({shared_id: {"000001": "sub-A/shared.nwb", "000002": "sub-B/shared.nwb"}}) + "\n"
+    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.zarr"
+    _write_mapping_store(
+        store_path=mapping_file_path,
+        lines=[json.dumps({shared_id: {"000001": "sub-A/shared.nwb", "000002": "sub-B/shared.nwb"}})],
     )
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
@@ -106,19 +111,47 @@ def test_content_id_with_multiple_usage_paths(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.ai_generated
-def test_malformed_line_is_skipped_with_warning(tmp_path: pathlib.Path) -> None:
-    """A malformed line in the JSON Lines cache raises a warning and is skipped."""
+def test_last_line_for_a_content_id_is_current(tmp_path: pathlib.Path) -> None:
+    """Where a content ID appears on several lines of the appended cache, the last line replaces the earlier ones."""
     extraction_directory = _initialize_cache(tmp_path)
 
     blob_id = "0a1b2c3d-1111-2222-3333-444455556666"
     _write_content_extraction(extraction_directory=extraction_directory, content_id=blob_id)
 
-    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.jsonl"
+    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.zarr"
+    mapping_lines = [
+        json.dumps({blob_id: {"000001": "sub-A/old.nwb"}}),
+        json.dumps({blob_id: {"000002": "sub-B/new.nwb"}}),
+    ]
+    _write_mapping_store(store_path=mapping_file_path, lines=mapping_lines)
+
+    dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
+        cache_directory=tmp_path,
+        workers=1,
+        region_resolver=_REGION_RESOLVER,
+        pick=["000001", "000002"],
+        content_id_to_usage_dandiset_path_url=str(mapping_file_path),
+    )
+
+    by_asset = pandas.read_table(filepath_or_buffer=tmp_path / "summaries" / "000002" / "by_asset.tsv")
+    assert by_asset["asset_path"].tolist() == ["sub-B/new.nwb"]
+    assert not (tmp_path / "summaries" / "000001").exists()
+
+
+@pytest.mark.ai_generated
+def test_malformed_line_is_skipped_with_warning(tmp_path: pathlib.Path) -> None:
+    """A malformed line in the Zarr cache raises a warning and is skipped."""
+    extraction_directory = _initialize_cache(tmp_path)
+
+    blob_id = "0a1b2c3d-1111-2222-3333-444455556666"
+    _write_content_extraction(extraction_directory=extraction_directory, content_id=blob_id)
+
+    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.zarr"
     mapping_lines = [
         "this is not JSON",
         json.dumps({blob_id: {"000001": "sub-A/sub-A.nwb"}}),
     ]
-    mapping_file_path.write_text("\n".join(mapping_lines) + "\n")
+    _write_mapping_store(store_path=mapping_file_path, lines=mapping_lines)
 
     with pytest.warns(UserWarning, match="malformed JSON on line 1"):
         dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
@@ -135,7 +168,7 @@ def test_malformed_line_is_skipped_with_warning(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.ai_generated
 def test_unassociated_blob_summarized_as_undetermined(tmp_path: pathlib.Path) -> None:
-    """A content ID absent from the JSON Lines cache is summarized under the 'undetermined' key."""
+    """A content ID absent from the Zarr cache is summarized under the 'undetermined' key."""
     extraction_directory = _initialize_cache(tmp_path)
 
     mapped_id = "0a1b2c3d-1111-2222-3333-444455556666"
@@ -143,8 +176,8 @@ def test_unassociated_blob_summarized_as_undetermined(tmp_path: pathlib.Path) ->
     _write_content_extraction(extraction_directory=extraction_directory, content_id=mapped_id)
     _write_content_extraction(extraction_directory=extraction_directory, content_id=unmapped_id)
 
-    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.jsonl"
-    mapping_file_path.write_text(json.dumps({mapped_id: {"000001": "sub-A/sub-A.nwb"}}) + "\n")
+    mapping_file_path = tmp_path / "content_id_to_usage_dandiset_path.zarr"
+    _write_mapping_store(store_path=mapping_file_path, lines=[json.dumps({mapped_id: {"000001": "sub-A/sub-A.nwb"}})])
 
     dandi_s3_log_extraction.summarize.generate_dandiset_summaries(
         cache_directory=tmp_path,
@@ -161,7 +194,7 @@ def test_unassociated_blob_summarized_as_undetermined(tmp_path: pathlib.Path) ->
 
 @pytest.mark.ai_generated
 def test_missing_local_mapping_file_raises(tmp_path: pathlib.Path) -> None:
-    """A nonexistent local cache file raises a FileNotFoundError."""
+    """A nonexistent local cache store raises a FileNotFoundError."""
     _initialize_cache(tmp_path)
 
     with pytest.raises(FileNotFoundError, match="no such file"):
@@ -170,5 +203,5 @@ def test_missing_local_mapping_file_raises(tmp_path: pathlib.Path) -> None:
             workers=1,
             region_resolver=_REGION_RESOLVER,
             pick=["000001"],
-            content_id_to_usage_dandiset_path_url=str(tmp_path / "missing.jsonl"),
+            content_id_to_usage_dandiset_path_url=str(tmp_path / "missing.zarr"),
         )

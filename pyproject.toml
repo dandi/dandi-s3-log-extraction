@@ -46,6 +46,9 @@ dependencies = [
     "cryptography",
     "dandi",
     "s3_log_extraction>=1.11.10",
+    "zarr>=3",
+    "fsspec",
+    "aiohttp",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
