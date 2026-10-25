@@ -68,4 +68,12 @@ dandis3logextraction update summaries --mode archive
 dandis3logextraction update totals --mode archive
 ```
 
+To check whether a remote extraction has anything to do, without running it:
+
+```bash
+dandis3logextraction pending s3://dandiarchive-logs --inventory /path/to/inventory --exit-code
+```
+
+This prints the number of log files the extraction would process. With `--exit-code`, it also exits with status 1 when any are pending, so a scheduled job can start an extraction only when needed.
+
 Requesters are geolocated while the summaries are generated, against the published IP ranges of known cloud services and VPNs and the local GeoLite2-City database of the upstream package. The database is downloaded on first use and refreshed once it is more than a week old, which needs the `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` environment variables of a free MaxMind account; see the upstream README. The coordinates step comes from the upstream `s3logextraction` CLI and gives every region of the published summaries a coordinate for the maps.
