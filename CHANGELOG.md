@@ -4,7 +4,7 @@
 
 ### 🚀 Enhancement
 
-- Added the `dandis3logextraction pending` command, which prints how many remote log files an extraction would process without extracting them. With `--exit-code`, it exits with status 1 when any are pending, so a scheduled job can start an extraction only when needed. Raised the upstream pin to `s3_log_extraction>=1.11.11`, which provides the underlying check. ([#PR](https://github.com/dandi/dandi-s3-log-extraction/pull/PR))
+- Added the `dandis3logextraction pending` command, which prints how many remote log files an extraction would process without extracting them. With `--exit-code`, it exits with status 1 when any are pending, so a scheduled job can start an extraction only when needed. Raised the upstream pin to `s3_log_extraction>=1.11.11`, which provides the underlying check. ([#107](https://github.com/dandi/dandi-s3-log-extraction/pull/107))
 
 ### 🏠 Internal
 
