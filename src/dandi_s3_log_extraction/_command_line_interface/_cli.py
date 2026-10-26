@@ -81,8 +81,8 @@ def _dandis3logextraction_cli():
     "extra_excluded_ips",
     help=(
         "A comma-separated list of IP addresses to exclude for this run only. They are added to those listed in "
-        "'~/.s3-log-extraction/excluded_ips.txt' and in the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable, "
-        "which can also be set in '~/.s3-log-extraction/.env'."
+        "the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in "
+        "'~/.s3-log-extraction/.env'."
     ),
     required=False,
     type=rich_click.STRING,
@@ -256,8 +256,8 @@ def _update_cli() -> None:
     "extra_excluded_ips",
     help=(
         "A comma-separated list of IP addresses to exclude for this run only. They are added to those listed in "
-        "'~/.s3-log-extraction/excluded_ips.txt' and in the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable, "
-        "which can also be set in '~/.s3-log-extraction/.env'."
+        "the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in "
+        "'~/.s3-log-extraction/.env'."
     ),
     required=False,
     type=rich_click.STRING,
@@ -278,9 +278,9 @@ def _update_summaries_cli(
     """
     Generate condensed summaries of activity.
 
-    Any excluded IP addresses are left out of every summary. These are the addresses listed in
-    '~/.s3-log-extraction/excluded_ips.txt', in the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable, and given
-    to '--exclude'. Requesters in the published GitHub ranges are left out of the view and requester counts only.
+    Any excluded IP addresses are left out of every summary. These are the addresses listed in the
+    S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in '~/.s3-log-extraction/.env',
+    and those given to '--exclude'. Requesters in the published GitHub ranges are left out of the view and requester counts only.
     """
     match mode:
         case "archive":
