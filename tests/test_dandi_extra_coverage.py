@@ -61,17 +61,66 @@ def test_handle_max_workers_exceeds_cpu_count() -> None:
 
 
 @pytest.mark.ai_generated
-def test_dandi_remote_extractor_init(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """DandiRemoteS3LogAccessExtractor.__init__ sets expected attributes."""
+@pytest.mark.parametrize(
+    ("excluded_ips", "expected_awk_excluded_ips"),
+    [
+        pytest.param(None, "192.0.2.1", id="defaults_to_upstream_excluded_ips"),
+        pytest.param([], "", id="empty_overrides_upstream_excluded_ips"),
+        pytest.param(["192.0.2.3", "192.0.2.2"], "192.0.2.2 192.0.2.3", id="explicit_overrides_upstream_excluded_ips"),
+    ],
+)
+def test_dandi_remote_extractor_init(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    excluded_ips: list[str] | None,
+    expected_awk_excluded_ips: str,
+) -> None:
+    """DandiRemoteS3LogAccessExtractor.__init__ sets expected attributes and passes the excluded IPs to awk."""
     from dandi_s3_log_extraction.extractors import DandiRemoteS3LogAccessExtractor
 
-    monkeypatch.setenv("IPS_TO_SKIP", "192.168.0.1|10.0.0.1")
+    monkeypatch.setattr(
+        "s3_log_extraction.extractors._remote_s3_log_access_extractor.get_excluded_ips",
+        lambda: frozenset({"192.0.2.1"}),
+    )
 
-    extractor = DandiRemoteS3LogAccessExtractor(cache_directory=tmp_path)
+    extractor = DandiRemoteS3LogAccessExtractor(cache_directory=tmp_path, excluded_ips=excluded_ips)
     assert extractor._relative_script_path.exists()
-    assert "IPS_TO_SKIP_REGEX" in extractor._awk_env
-    assert extractor._awk_env["IPS_TO_SKIP_REGEX"] == "192.168.0.1|10.0.0.1"
+    assert extractor._awk_env["EXCLUDED_IPS"] == expected_awk_excluded_ips
+    assert "IPS_TO_SKIP_REGEX" not in extractor._awk_env
     assert extractor.use_encryption is False
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize(
+    ("excluded_ips", "expected_ips"),
+    [
+        pytest.param([], ["192.0.2.1", "192.0.2.10"], id="nothing_excluded"),
+        pytest.param(["192.0.2.1"], ["192.0.2.10"], id="only_exact_address_excluded"),
+    ],
+)
+def test_dandi_extraction_script_drops_excluded_ips(
+    tmp_path: pathlib.Path, excluded_ips: list[str], expected_ips: list[str]
+) -> None:
+    """The DANDI awk script drops the requests of exactly the excluded addresses, and no neighboring one."""
+    from dandi_s3_log_extraction.extractors import DandiRemoteS3LogAccessExtractor
+
+    log_file_path = tmp_path / "2020-01-01-00-00-00-0123456789ABCDEF"
+    log_file_path.write_text(
+        "".join(
+            f"abc123 dandiarchive [01/Jan/2020:00:00:00 +0000] {ip} - REQ123 REST.GET.OBJECT blobs/abc/def "
+            f'"GET /blobs/abc/def HTTP/1.1" 200 - 10 10 10 10 "-" "TestAgent" -\n'
+            for ip in ("192.0.2.1", "192.0.2.10")
+        )
+    )
+    output_directory = tmp_path / "output"
+    output_directory.mkdir()
+    cache_directory = tmp_path / "cache"
+    cache_directory.mkdir()
+
+    extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_directory, excluded_ips=excluded_ips)
+    extractor._run_extraction(file_path=log_file_path, extraction_directory=output_directory)
+
+    assert (output_directory / "blobs" / "abc" / "def" / "ips.txt").read_text().splitlines() == expected_ips
 
 
 # ─── generate_dandiset_summaries error cases ─────────────────────────────────

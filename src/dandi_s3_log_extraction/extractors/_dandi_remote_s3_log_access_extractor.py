@@ -1,4 +1,4 @@
-import os
+import collections.abc
 import pathlib
 
 import s3_log_extraction
@@ -21,12 +21,25 @@ class DandiRemoteS3LogAccessExtractor(s3_log_extraction.extractors.RemoteS3LogAc
             - Invoke the command `s3logextraction stop` to end the processes after the current round of completion.
             - Manually create a file in the extraction cache called '.stop_extraction'.
       - updatable
+
+    Parameters
+    ----------
+    cache_directory : pathlib.Path | None, optional
+        The directory holding the extraction cache and its records.
+        Defaults to the configured cache directory.
+    excluded_ips : iterable of str, optional
+        The IP addresses whose requests are dropped during extraction, so they never enter the cache.
+        Defaults to `s3_log_extraction.config.get_excluded_ips()`, the union of
+        `~/.s3-log-extraction/excluded_ips.txt` and the `S3_LOG_EXTRACTION_EXCLUDED_IPS` environment variable.
+        An explicit value replaces that default, so pass an empty list to drop nothing.
     """
 
-    def __init__(self, cache_directory: pathlib.Path | None = None) -> None:
-        super().__init__(cache_directory=cache_directory, use_encryption=False)
+    def __init__(
+        self,
+        *,
+        cache_directory: pathlib.Path | None = None,
+        excluded_ips: collections.abc.Iterable[str] | None = None,
+    ) -> None:
+        super().__init__(cache_directory=cache_directory, use_encryption=False, excluded_ips=excluded_ips)
 
         self._relative_script_path = pathlib.Path(__file__).parent / "_dandi_extraction.awk"
-
-        ips_to_skip_regex = os.environ.get("IPS_TO_SKIP", "")
-        self._awk_env["IPS_TO_SKIP_REGEX"] = ips_to_skip_regex

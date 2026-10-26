@@ -4,10 +4,23 @@ import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
+import s3_log_extraction.config
 from click.testing import CliRunner
 
 from dandi_s3_log_extraction._command_line_interface._cli import _dandis3logextraction_cli
 from dandi_s3_log_extraction.summarize._generate_dandiset_summaries import REGION_DISCLOSURE_THRESHOLD
+
+_CONFIGURED_EXCLUDED_IPS = frozenset({"192.0.2.1"})
+
+
+@pytest.fixture(autouse=True)
+def configured_excluded_ips(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the user's excluded IPs, so the commands see the same configured addresses on every machine."""
+    monkeypatch.setattr(
+        s3_log_extraction.config,
+        "get_excluded_ips",
+        lambda extra_ips=None, /: _CONFIGURED_EXCLUDED_IPS | frozenset(extra_ips or []),
+    )
 
 
 @pytest.mark.ai_generated
@@ -34,7 +47,7 @@ def test_extract_remote_mode(tmp_path: pathlib.Path) -> None:
         result = runner.invoke(_dandis3logextraction_cli, ["extract", str(tmp_path), "--mode", "remote"])
 
         assert result.exit_code == 0, result.output
-        mock_extractor_class.assert_called_once_with(cache_directory=None)
+        mock_extractor_class.assert_called_once_with(cache_directory=None, excluded_ips=_CONFIGURED_EXCLUDED_IPS)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path), limit=None, workers=-2, inventory_directory=None
         )
@@ -67,7 +80,7 @@ def test_extract_with_limit_and_workers(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
-        mock_extractor_class.assert_called_once_with(cache_directory=None)
+        mock_extractor_class.assert_called_once_with(cache_directory=None, excluded_ips=_CONFIGURED_EXCLUDED_IPS)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path), limit=5, workers=2, inventory_directory=None
         )
@@ -91,7 +104,7 @@ def test_extract_remote_with_inventory(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
-        mock_extractor_class.assert_called_once_with(cache_directory=None)
+        mock_extractor_class.assert_called_once_with(cache_directory=None, excluded_ips=_CONFIGURED_EXCLUDED_IPS)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path),
             limit=None,
@@ -118,7 +131,7 @@ def test_extract_remote_with_cache(tmp_path: pathlib.Path) -> None:
         )
 
         assert result.exit_code == 0, result.output
-        mock_extractor_class.assert_called_once_with(cache_directory=cache_dir)
+        mock_extractor_class.assert_called_once_with(cache_directory=cache_dir, excluded_ips=_CONFIGURED_EXCLUDED_IPS)
         mock_extractor.extract_s3_bucket.assert_called_once_with(
             s3_root=str(tmp_path),
             limit=None,
@@ -166,6 +179,7 @@ def test_update_summaries_default_mode() -> None:
             unassociated=False,
             region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
+            excluded_ips=_CONFIGURED_EXCLUDED_IPS,
         )
 
 
@@ -199,6 +213,7 @@ def test_update_summaries_with_pick_and_skip() -> None:
             unassociated=False,
             region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
+            excluded_ips=_CONFIGURED_EXCLUDED_IPS,
         )
 
 
@@ -232,6 +247,7 @@ def test_update_summaries_with_all_options() -> None:
             unassociated=True,
             region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=None,
+            excluded_ips=_CONFIGURED_EXCLUDED_IPS,
         )
 
 
@@ -255,6 +271,7 @@ def test_update_summaries_with_cache(tmp_path: pathlib.Path) -> None:
             unassociated=False,
             region_disclosure_threshold=REGION_DISCLOSURE_THRESHOLD,
             cache_directory=str(tmp_path),
+            excluded_ips=_CONFIGURED_EXCLUDED_IPS,
         )
 
 
@@ -275,6 +292,7 @@ def test_update_summaries_with_threshold() -> None:
             unassociated=False,
             region_disclosure_threshold=0,
             cache_directory=None,
+            excluded_ips=_CONFIGURED_EXCLUDED_IPS,
         )
 
 
@@ -291,3 +309,25 @@ def test_update_summaries_archive_mode_with_threshold() -> None:
         mock_s3.summarize.generate_archive_summaries.assert_called_once_with(
             cache_directory=None, region_disclosure_threshold=3
         )
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(["extract", "s3://bucket", "--mode", "remote"], id="extract"),
+        pytest.param(["update", "summaries"], id="update_summaries"),
+    ],
+)
+def test_exclude_adds_to_the_configured_excluded_ips(command: list[str]) -> None:
+    """The comma-separated --exclude addresses are passed on together with the configured excluded IPs."""
+    runner = CliRunner()
+    with (
+        patch("dandi_s3_log_extraction._command_line_interface._cli.DandiRemoteS3LogAccessExtractor") as mock_extractor,
+        patch("dandi_s3_log_extraction._command_line_interface._cli.generate_dandiset_summaries") as mock_gen,
+    ):
+        result = runner.invoke(_dandis3logextraction_cli, [*command, "--exclude", "192.0.2.2,192.0.2.3"])
+
+        assert result.exit_code == 0, result.output
+        mock = mock_extractor if command[0] == "extract" else mock_gen
+        assert mock.call_args.kwargs["excluded_ips"] == frozenset({"192.0.2.1", "192.0.2.2", "192.0.2.3"})
