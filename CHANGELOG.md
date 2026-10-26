@@ -2,6 +2,10 @@
 
 # Upcoming
 
+### ⚠️ Breaking
+
+- Replaced the `IPS_TO_SKIP` regex with the upstream list of excluded IP addresses, read from `~/.s3-log-extraction/excluded_ips.txt`, the `S3_LOG_EXTRACTION_EXCLUDED_IPS` environment variable or `~/.s3-log-extraction/.env`, and the new `--exclude` option of `extract` and `update summaries`. Only exact addresses are accepted, so any regex must be converted to a list before upgrading. The upstream pin is raised to `>=1.12.0`. ([#108](https://github.com/dandi/dandi-s3-log-extraction/pull/108))
+
 ### 🏠 Internal
 
 - Disabled Dependabot rebases, which force-push and so fail on protected branches. ([#102](https://github.com/dandi/dandi-s3-log-extraction/pull/102))
