@@ -280,7 +280,8 @@ def _update_summaries_cli(
 
     Any excluded IP addresses are left out of every summary. These are the addresses listed in the
     S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in '~/.s3-log-extraction/.env',
-    and those given to '--exclude'. Requesters in the published GitHub ranges are left out of the view and requester counts only.
+    and those given to '--exclude'. Requesters in the published GitHub ranges are left out of the view and
+    requester counts only.
     """
     match mode:
         case "archive":
