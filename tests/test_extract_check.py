@@ -1,4 +1,4 @@
-"""Tests for checking the pending work of a remote DANDI extraction without extracting it."""
+"""Tests for checking whether a remote DANDI extraction has anything to do, through `extract --check`."""
 
 import csv
 import gzip
@@ -17,6 +17,7 @@ _KEYS = (
     "2024/01/01/2024-01-01-00-05-00-BBBB",
     "2024/01/02/2024-01-02-00-00-00-CCCC",
 )
+_PENDING_EXIT_CODE = 3
 
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def inventory_directory(tmp_path: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture
 def base_temporary_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """Create the temporary directories of the extractor under a known base so that leaks can be seen."""
+    """Create the temporary directories of the extractor under a known base so that any directory shows."""
     base_temporary_directory = tmp_path / "tmp"
     base_temporary_directory.mkdir()
     monkeypatch.setattr(
@@ -62,26 +63,23 @@ def base_temporary_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.
 
 @pytest.mark.ai_generated
 @pytest.mark.parametrize(
-    ("number_of_processed_keys", "flags", "expected_output", "expected_exit_code"),
+    ("number_of_processed_keys", "expected_output", "expected_exit_code"),
     [
-        (0, [], "3\n", 0),
-        (0, ["--exit-code"], "3\n", 1),
-        (2, ["--exit-code"], "1\n", 1),
-        (3, [], "0\n", 0),
-        (3, ["--exit-code"], "0\n", 0),
+        (0, "Log files are pending extraction.\n", _PENDING_EXIT_CODE),
+        (2, "Log files are pending extraction.\n", _PENDING_EXIT_CODE),
+        (3, "No log files are pending extraction.\n", 0),
     ],
 )
-def test_pending_cli_reads_dandi_records_and_cleans_up(
+def test_extract_check_reads_dandi_records_and_writes_nothing(
     tmp_path: pathlib.Path,
     inventory_directory: pathlib.Path,
     base_temporary_directory: pathlib.Path,
     number_of_processed_keys: int,
-    flags: list[str],
     expected_output: str,
     expected_exit_code: int,
 ) -> None:
     """
-    The command counts against the records of the DANDI extractor, exits nonzero on request when any files are
+    The check reads the records of the DANDI extractor, reports through its exit status whether anything is
     pending, and leaves neither a temporary directory nor any change to the records behind.
     """
     cache_directory = tmp_path / "cache"
@@ -97,13 +95,15 @@ def test_pending_cli_reads_dandi_records_and_cleans_up(
     result = CliRunner().invoke(
         _dandis3logextraction_cli,
         [
-            "pending",
+            "extract",
             f"s3://{_SOURCE_BUCKET}",
+            "--mode",
+            "remote",
             "--inventory",
             str(inventory_directory),
             "--cache",
             str(cache_directory),
-            *flags,
+            "--check",
         ],
     )
 

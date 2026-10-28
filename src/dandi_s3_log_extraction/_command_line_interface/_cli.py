@@ -2,7 +2,6 @@
 
 import os
 import pathlib
-import shutil
 import sys
 import typing
 
@@ -12,6 +11,11 @@ import s3_log_extraction
 from ..extractors import DandiRemoteS3LogAccessExtractor
 from ..summarize import generate_dandiset_summaries
 from ..summarize._generate_dandiset_summaries import REGION_DISCLOSURE_THRESHOLD
+
+# The exit status of `extract --check` when log files are pending, kept apart from 1 (an unhandled error) and
+# 2 (a usage error) so that a script can tell pending work apart from a failure. It matches the upstream
+# `s3logextraction extract --check`.
+_CHECK_PENDING_EXIT_CODE = 3
 
 
 # dandis3logextraction
@@ -78,6 +82,16 @@ def _dandis3logextraction_cli():
     type=rich_click.Path(exists=True, file_okay=False, dir_okay=True),
     default=None,
 )
+@rich_click.option(
+    "--check",
+    help=(
+        "Only check whether any log files are pending extraction, then exit without extracting anything. "
+        f"Exits with status {_CHECK_PENDING_EXIT_CODE} when some are pending and 0 when none are. "
+        "The check stops at the first pending file, and writes no records and no temporary directory."
+    ),
+    is_flag=True,
+    default=False,
+)
 def _extract_cli(
     directory: str,
     limit: int | None = None,
@@ -85,6 +99,7 @@ def _extract_cli(
     cache_directory: str | None = None,
     mode: typing.Literal["remote"] | None = None,
     inventory_directory: str | None = None,
+    check: bool = False,
 ) -> None:
     """
     Extract S3 log access data from the specified directory.
@@ -98,6 +113,17 @@ def _extract_cli(
     match mode:
         case "remote":
             extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_path)
+            if check is True:
+                is_pending = extractor.has_unprocessed_s3_urls(
+                    s3_root=directory, inventory_directory=inventory_directory
+                )
+                if is_pending is False:
+                    rich_click.echo("No log files are pending extraction.")
+                    return
+
+                rich_click.echo("Log files are pending extraction.")
+                sys.exit(_CHECK_PENDING_EXIT_CODE)
+
             extractor.extract_s3_bucket(
                 s3_root=directory,
                 limit=limit,
@@ -113,69 +139,6 @@ def _extract_cli(
             raise NotImplementedError(
                 "Only remote extraction is supported by this package. Please use '--mode remote'."
             )
-
-
-# dandis3logextraction pending < s3_root >
-@_dandis3logextraction_cli.command(name="pending")
-@rich_click.argument("s3_root", type=rich_click.STRING)
-@rich_click.option(
-    "--inventory",
-    "inventory_directory",
-    help=(
-        "Path to a local pre-downloaded AWS S3 Inventory directory, as taken by `extract --mode remote`. "
-        "When omitted, log files are discovered by scanning the remote bucket directly, which can be very slow."
-    ),
-    required=False,
-    type=rich_click.Path(exists=True, file_okay=False, dir_okay=True),
-    default=None,
-)
-@rich_click.option(
-    "--cache",
-    "cache_directory",
-    help=(
-        "Use a non-default cache directory holding the extraction records. "
-        "This overrides the configured cache directory without modifying saved config."
-    ),
-    required=False,
-    type=rich_click.Path(exists=True, file_okay=False, dir_okay=True),
-    default=None,
-)
-@rich_click.option(
-    "--exit-code",
-    "exit_code",
-    help="Exit with status 1 when any log files are pending, and 0 when none are.",
-    is_flag=True,
-    default=False,
-)
-def _pending_cli(
-    s3_root: str,
-    inventory_directory: str | None = None,
-    cache_directory: str | None = None,
-    exit_code: bool = False,
-) -> None:
-    """
-    Print the number of remote log files that have not yet been extracted, without extracting them.
-
-    This is the number of files that `extract S3_ROOT --mode remote` would work through. It only reads the
-    extraction records, so it is a cheap check of whether an extraction run has anything to do.
-
-    S3_ROOT : The root S3 path of the log bucket (e.g. s3://dandiarchive-logs).
-    """
-    extractor = DandiRemoteS3LogAccessExtractor(
-        cache_directory=pathlib.Path(cache_directory) if cache_directory is not None else None
-    )
-    try:
-        unprocessed_s3_urls = extractor.get_unprocessed_s3_urls(
-            s3_root=s3_root, inventory_directory=inventory_directory
-        )
-    finally:
-        shutil.rmtree(path=extractor.temporary_directory, ignore_errors=True)
-
-    number_of_pending_files = len(unprocessed_s3_urls)
-    rich_click.echo(number_of_pending_files)
-
-    if exit_code is True and number_of_pending_files > 0:
-        sys.exit(1)
 
 
 # dandis3logextraction stop
