@@ -76,18 +76,6 @@ def _dandis3logextraction_cli():
     type=rich_click.Path(exists=True, file_okay=False, dir_okay=True),
     default=None,
 )
-@rich_click.option(
-    "--exclude",
-    "extra_excluded_ips",
-    help=(
-        "A comma-separated list of IP addresses to exclude for this run only. They are added to those listed in "
-        "the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in "
-        "'~/.s3-log-extraction/.env'."
-    ),
-    required=False,
-    type=rich_click.STRING,
-    default=None,
-)
 def _extract_cli(
     directory: str,
     limit: int | None = None,
@@ -95,7 +83,6 @@ def _extract_cli(
     cache_directory: str | None = None,
     mode: typing.Literal["remote"] | None = None,
     inventory_directory: str | None = None,
-    extra_excluded_ips: str | None = None,
 ) -> None:
     """
     Extract S3 log access data from the specified directory.
@@ -103,17 +90,12 @@ def _extract_cli(
     Note that you should not attempt to interrupt the extraction process using Ctrl+C or pkill, as this may lead to
     incomplete data extraction. Instead, use this command to safely stop the extraction process.
 
-    Requests from the excluded IP addresses are dropped and never enter the cache.
-
     DIRECTORY : The path to the folder containing all raw S3 log files.
     """
     cache_path = pathlib.Path(cache_directory) if cache_directory is not None else None
     match mode:
         case "remote":
-            excluded_ips = s3_log_extraction.config.get_excluded_ips(
-                extra_excluded_ips.split(",") if extra_excluded_ips is not None else None
-            )
-            extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_path, excluded_ips=excluded_ips)
+            extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_path)
             extractor.extract_s3_bucket(
                 s3_root=directory,
                 limit=limit,
@@ -251,18 +233,6 @@ def _update_cli() -> None:
     type=rich_click.Path(file_okay=False, dir_okay=True),
     default=None,
 )
-@rich_click.option(
-    "--exclude",
-    "extra_excluded_ips",
-    help=(
-        "A comma-separated list of IP addresses to exclude for this run only. They are added to those listed in "
-        "the S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in "
-        "'~/.s3-log-extraction/.env'."
-    ),
-    required=False,
-    type=rich_click.STRING,
-    default=None,
-)
 def _update_summaries_cli(
     mode: typing.Literal["dandi", "archive"] | None = None,
     pick: str | None = None,
@@ -273,15 +243,12 @@ def _update_summaries_cli(
     unassociated: bool = False,
     region_disclosure_threshold: int = REGION_DISCLOSURE_THRESHOLD,
     cache_directory: str | None = None,
-    extra_excluded_ips: str | None = None,
 ) -> None:
     """
     Generate condensed summaries of activity.
 
-    Any excluded IP addresses are left out of every summary. These are the addresses listed in the
-    S3_LOG_EXTRACTION_EXCLUDED_IPS environment variable or, when it is not set, in '~/.s3-log-extraction/.env',
-    and those given to '--exclude'. Requesters in the published GitHub ranges are left out of the view and
-    requester counts only.
+    Any addresses listed in '~/.s3-log-extraction/excluded_ips.txt' are left out of every summary. Requesters in the
+    published GitHub ranges are left out of the view and requester counts only.
     """
     match mode:
         case "archive":
@@ -302,7 +269,4 @@ def _update_summaries_cli(
                 unassociated=unassociated,
                 region_disclosure_threshold=region_disclosure_threshold,
                 cache_directory=cache_directory,
-                excluded_ips=s3_log_extraction.config.get_excluded_ips(
-                    extra_excluded_ips.split(",") if extra_excluded_ips is not None else None
-                ),
             )

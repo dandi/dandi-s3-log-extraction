@@ -40,16 +40,14 @@ pip install dandi-s3-log-extraction
 
 Usage on the DANDI archive logs requires a bit more customization than the generic package.
 
-Begin by listing the IP addresses to exclude, such as all associated Drogon IPs (ask Yarik or Cody for the list). Their requests are dropped during extraction and left out of every summary. List them in the standard dotenv file `~/.s3-log-extraction/.env`, as a double-quoted `S3_LOG_EXTRACTION_EXCLUDED_IPS` value with one address per line. This is the same file the upstream `s3-log-extraction` package reads.
+Begin by listing the IP addresses to exclude, such as all associated Drogon IPs (ask Yarik or Cody for the list), in `~/.s3-log-extraction/excluded_ips.txt`. This file, read by the upstream `s3-log-extraction` package, is the only list of excluded addresses. Their requests are dropped during extraction and left out of every summary.
 
 ```text
-S3_LOG_EXTRACTION_EXCLUDED_IPS="
 192.0.2.1  # Drogon
 192.0.2.2  # Drogon
-"
 ```
 
-Anything after a `#` on a line is a comment, and blank lines are ignored. Every entry must be a single exact address. Networks in CIDR notation, wildcards, and regular expressions are refused with an error. A shell can read the same file with `set -a; . ~/.s3-log-extraction/.env; set +a`. For `docker --env-file`, which does not understand multi-line values, write the value on one line instead, comma-separated and unquoted. A variable already set in the environment takes precedence over the file. The `--exclude` option of `extract` and `update summaries` adds a comma-separated list of addresses for that run only.
+The file holds one IPv4 or IPv6 address per line. Anything after a `#` is a comment, and blank lines are ignored. Every entry must be a single exact address. Networks in CIDR notation, wildcards, and regular expressions are refused with an error.
 
 The `S3_LOG_EXTRACTION_PASSWORD` is no longer required by this package. It is only relevant if you opt in to the upstream `s3-log-extraction` encryption of the IP index and geolocation caches.
 
