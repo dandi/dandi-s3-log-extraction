@@ -2,6 +2,7 @@
 
 import os
 import pathlib
+import sys
 import typing
 
 import rich_click
@@ -10,6 +11,11 @@ import s3_log_extraction
 from ..extractors import DandiRemoteS3LogAccessExtractor
 from ..summarize import generate_dandiset_summaries
 from ..summarize._generate_dandiset_summaries import REGION_DISCLOSURE_THRESHOLD
+
+# The exit status of `extract --check` when log files are pending, kept apart from 1 (an unhandled error) and
+# 2 (a usage error) so that a script can tell pending work apart from a failure. It matches the upstream
+# `s3logextraction extract --check`.
+_CHECK_PENDING_EXIT_CODE = 3
 
 
 # dandis3logextraction
@@ -76,6 +82,16 @@ def _dandis3logextraction_cli():
     type=rich_click.Path(exists=True, file_okay=False, dir_okay=True),
     default=None,
 )
+@rich_click.option(
+    "--check",
+    help=(
+        "Only check whether any log files are pending extraction, then exit without extracting anything. "
+        f"Exits with status {_CHECK_PENDING_EXIT_CODE} when some are pending and 0 when none are. "
+        "The check stops at the first pending file, and writes no records and no temporary directory."
+    ),
+    is_flag=True,
+    default=False,
+)
 def _extract_cli(
     directory: str,
     limit: int | None = None,
@@ -83,6 +99,7 @@ def _extract_cli(
     cache_directory: str | None = None,
     mode: typing.Literal["remote"] | None = None,
     inventory_directory: str | None = None,
+    check: bool = False,
 ) -> None:
     """
     Extract S3 log access data from the specified directory.
@@ -96,6 +113,17 @@ def _extract_cli(
     match mode:
         case "remote":
             extractor = DandiRemoteS3LogAccessExtractor(cache_directory=cache_path)
+            if check is True:
+                is_pending = extractor.has_unprocessed_s3_urls(
+                    s3_root=directory, inventory_directory=inventory_directory
+                )
+                if is_pending is False:
+                    rich_click.echo("No log files are pending extraction.")
+                    return
+
+                rich_click.echo("Log files are pending extraction.")
+                sys.exit(_CHECK_PENDING_EXIT_CODE)
+
             extractor.extract_s3_bucket(
                 s3_root=directory,
                 limit=limit,

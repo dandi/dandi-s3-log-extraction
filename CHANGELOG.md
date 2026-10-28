@@ -2,6 +2,10 @@
 
 # Upcoming
 
+### 🚀 Enhancement
+
+- Added a `--check` flag to `dandis3logextraction extract`, which reports whether any log files are pending extraction and exits without extracting. It exits with status 3 when some are pending and 0 when none are, so a scheduled job can start an extraction only when needed. Raised the upstream pin to `s3_log_extraction>=1.14.1`, the release that provides the check. ([#107](https://github.com/dandi/dandi-s3-log-extraction/pull/107))
+
 ### 🏠 Internal
 
 - Disabled Dependabot rebases, which force-push and so fail on protected branches. ([#102](https://github.com/dandi/dandi-s3-log-extraction/pull/102))
