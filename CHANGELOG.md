@@ -4,7 +4,7 @@
 
 ### ⚠️ Breaking
 
-- Replaced the `IPS_TO_SKIP` regex with the upstream list of excluded IP addresses in `~/.s3-log-extraction/excluded_ips.txt`, which extraction now also reads, so that file is the only list. Only exact addresses are accepted, so convert any regex to a list of addresses before upgrading. The upstream pin is raised to `>=1.13.0`. ([#108](https://github.com/dandi/dandi-s3-log-extraction/pull/108))
+- Replaced the `IPS_TO_SKIP` regex with the upstream list of excluded IP addresses in `~/.s3-log-extraction/excluded_ips.txt`, which extraction now also reads, so that file is the only list. Only exact addresses are accepted, so convert any regex to a list of addresses before upgrading. The upstream pin is raised to `>=1.14.1`. ([#108](https://github.com/dandi/dandi-s3-log-extraction/pull/108))
 
 ### 🏠 Internal
 
