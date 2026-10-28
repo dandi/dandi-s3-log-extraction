@@ -40,14 +40,11 @@ pip install dandi-s3-log-extraction
 
 Usage on the DANDI archive logs requires a bit more customization than the generic package.
 
-Begin by ensuring a special required environment variable is set:
+Begin by listing the IP addresses to exclude, such as all associated Drogon IPs (ask Yarik or Cody for the list), in `~/.s3-log-extraction/excluded_ips.txt`. This file, read by the upstream `s3-log-extraction` package, is the only list of excluded addresses. Their requests are dropped during extraction and left out of every summary.
 
-**IPS_TO_SKIP**
-  - A regular expression matching all associated Drogon IPs, which are skipped during extraction.
+The file holds one IPv4 or IPv6 address per line. Anything after a `#` is a comment, and blank lines are ignored. Every entry must be a single exact address. Networks in CIDR notation, wildcards, and regular expressions are refused with an error.
 
-```bash
-export IPS_TO_SKIP="ask_yarik_or_cody_for_regex"
-```
+Exclusion only works in one direction over time. Adding an address drops its requests from future extraction. Removing an address from the file does not bring its requests back, since they were never extracted. To include an address again, rerun the extraction from scratch with `s3logextraction reset extraction` followed by a full `dandis3logextraction extract`.
 
 The `S3_LOG_EXTRACTION_PASSWORD` is no longer required by this package. It is only relevant if you opt in to the upstream `s3-log-extraction` encryption of the IP index and geolocation caches.
 

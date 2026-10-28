@@ -1,17 +1,17 @@
 BEGIN {
     FS = "HTTP/1\\."
 
-    if (!("IPS_TO_SKIP_REGEX" in ENVIRON)) {
-        print "Environment variable 'IPS_TO_SKIP_REGEX' is not set" > "/dev/stderr"
-        exit 1
-    }
-    IPS_TO_SKIP_REGEX = ENVIRON["IPS_TO_SKIP_REGEX"]
-
     if (!("EXTRACTION_DIRECTORY" in ENVIRON)) {
         print "Environment variable 'EXTRACTION_DIRECTORY' is not set" > "/dev/stderr"
         exit 1
     }
     EXTRACTION_DIRECTORY = ENVIRON["EXTRACTION_DIRECTORY"] "/"
+
+    # A space-separated list of exact addresses, empty or unset to exclude nothing
+    number_of_excluded_ips = split(ENVIRON["EXCLUDED_IPS"], excluded_ip_list, " ")
+    for (i = 1; i <= number_of_excluded_ips; i++) {
+        EXCLUDED_IPS[excluded_ip_list[i]] = 1
+    }
 
     MONTH_TO_NUMERIC["Jan"] = "01"
     MONTH_TO_NUMERIC["Feb"] = "02"
@@ -36,7 +36,7 @@ BEGIN {
     if (request_type != "REST.GET.OBJECT") {next}
 
     ip = pre_uri_fields[5]
-    if (ip ~ IPS_TO_SKIP_REGEX) {next}
+    if (ip in EXCLUDED_IPS) {next}
 
     split($2, post_uri_fields, " ")
     status = post_uri_fields[2]

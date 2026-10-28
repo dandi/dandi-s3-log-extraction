@@ -99,9 +99,9 @@ def generate_dandiset_summaries(
         the GeoLite2 database in the cache directory.
     excluded_ips : iterable of str, optional
         Individual addresses left out of every summary, including bytes sent, requests, downloads, views, and
-        the requester counts. Defaults to the addresses listed in the upstream `EXCLUDED_IPS_FILE_PATH`
-        (`~/.s3-log-extraction/excluded_ips.txt`), which is none when that file is absent. Pass an empty
-        iterable to exclude no address regardless of that file.
+        the requester counts. Defaults to the upstream `s3_log_extraction.config.get_excluded_ips()`, the
+        addresses listed in `~/.s3-log-extraction/excluded_ips.txt`, which is none when that file is absent.
+        Pass an empty iterable to exclude no address regardless of that file.
     """
     cache_directory = (
         pathlib.Path(cache_directory) if cache_directory is not None else s3_log_extraction.config.get_cache_directory()
