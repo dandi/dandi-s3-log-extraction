@@ -4,7 +4,7 @@
 
 ### ⚠️ Breaking
 
-- Replaced the `IPS_TO_SKIP` regex with the upstream list of excluded IP addresses, a comma-separated `S3_LOG_EXTRACTION_EXCLUDED_IPS` entry in `~/.s3-log-extraction/.env` or the environment, plus the new `--exclude` option of `extract` and `update summaries`. Only exact addresses are accepted, so convert any regex to a list before upgrading. The upstream pin is raised to `>=1.12.0`. ([#108](https://github.com/dandi/dandi-s3-log-extraction/pull/108))
+- Replaced the `IPS_TO_SKIP` regex with the upstream list of excluded IP addresses, the `S3_LOG_EXTRACTION_EXCLUDED_IPS` entry of `~/.s3-log-extraction/.env` (one per line, with optional `#` comments) or of the environment, plus the new `--exclude` option of `extract` and `update summaries`. Only exact addresses are accepted, so convert any regex to a list before upgrading. The upstream pin is raised to `>=1.12.0`. ([#108](https://github.com/dandi/dandi-s3-log-extraction/pull/108))
 
 ### 🏠 Internal
 
