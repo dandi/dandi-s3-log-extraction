@@ -42,11 +42,6 @@ Usage on the DANDI archive logs requires a bit more customization than the gener
 
 Begin by listing the IP addresses to exclude, such as all associated Drogon IPs (ask Yarik or Cody for the list), in `~/.s3-log-extraction/excluded_ips.txt`. This file, read by the upstream `s3-log-extraction` package, is the only list of excluded addresses. Their requests are dropped during extraction and left out of every summary.
 
-```text
-192.0.2.1  # Drogon
-192.0.2.2  # Drogon
-```
-
 The file holds one IPv4 or IPv6 address per line. Anything after a `#` is a comment, and blank lines are ignored. Every entry must be a single exact address. Networks in CIDR notation, wildcards, and regular expressions are refused with an error.
 
 Exclusion only works in one direction over time. Adding an address drops its requests from future extraction. Removing an address from the file does not bring its requests back, since they were never extracted. To include an address again, rerun the extraction from scratch with `s3logextraction reset extraction` followed by a full `dandis3logextraction extract`.
